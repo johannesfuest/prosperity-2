@@ -66,6 +66,8 @@ state = TradingState(
 )
 
 trader = Trader()
-output = trader.run(state)[0]
+result, conversions, traderData = trader.run(state)
 
-print(output)
+print(f"Result: {result}")
+print(f"Conversions: {conversions}")
+print(f"TraderData: {traderData}")
