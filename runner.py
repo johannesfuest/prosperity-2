@@ -1,7 +1,8 @@
 from datamodel import Listing, OrderDepth, Trade, TradingState
 from trader import Trader
+import time
 
-timestamp = 1000
+timestamp = time.time()
 
 listings = {
 	"PRODUCT1": Listing(
