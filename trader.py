@@ -94,21 +94,6 @@ class Trader:
                 cur_position += order.quantity
             results[product] = valid_orders
         return orders
-<<<<<<< HEAD
-
-<<<<<<< HEAD
-def get_acceptable_price_for_product(product, state, strategy=None):
-=======
-def get_acceptable_price_for_product(product, state):
->>>>>>> 103819b (added stuff and rebased)
-    product_trade_history = state.market_trades.get(product, [])
-    product_order_depth = state.order_depths[product]
-    if len(product_trade_history) == 0:
-        return get_mid_price_from_order_book(product_order_depth)
-    else:
-        return product_trade_history[0].price
-=======
->>>>>>> e453612 (added ridge regression support to trader class)
     
 def get_product_spread(state, product):
     if product == "AMETHYSTS":
