@@ -72,7 +72,7 @@ class Trader:
             result[product] = orders
             traderData[product] = generate_trader_data(state, product)
             
-        result = self.adjust_for_position_breaches(result, state, True)
+        #result = self.adjust_for_position_breaches(result, state, True)
         traderData = json.dumps(traderData)
         conversions = 1
         return result, conversions, traderData
@@ -101,22 +101,18 @@ class Trader:
         return results
     
 def get_product_spread(state, product):
+    price_history = get_price_history_from_state(state, product)
     if product == "AMETHYSTS":
         return 0.000085
     elif product == "STARFRUIT":
-        return 0.00001
-    else:
-        return 0.0005
+        return np.std(price_history) / np.mean(price_history)        
     
 
 def generate_trader_data(state, product):
-    if not state.traderData:
-        return initialize_trader_data(product)
-    else:
-        price_history_list = json.loads(state.traderData)[product]
-        price_history_list.pop(0)
-        price_history_list.append(get_mid_price_from_order_book(state.order_depths, product))
-        return price_history_list
+    price_history_list = get_price_history_from_state(state, product)
+    price_history_list.pop(0)
+    price_history_list.append(get_mid_price_from_order_book(state.order_depths, product))
+    return price_history_list
         
 
 def initialize_trader_data(product, length=15):
@@ -184,14 +180,11 @@ def get_acceptable_price_for_product(state, product):
         -0.00049075
         ])
     
-    if not state.traderData:
-        price_history = initialize_trader_data(product)
-    else:
-        price_history = json.loads(state.traderData)[product]
-    
+    price_history = get_price_history_from_state(state, product)
+
     if product == "AMETHYSTS":
-        predicted_price = sum(price_history) / len(price_history)
-    elif product == "STARFRUIT":
+        return sum(price_history) / len(price_history)
+    else:
         price_history = np.array([1.0] + price_history)
         predicted_price = np.dot(coefs, price_history)
     return predicted_price
@@ -202,4 +195,10 @@ def get_mid_price_from_order_book(order_depth, product):
     best_bid = list(order_depth[product].buy_orders.keys())[0]
     best_ask = list(order_depth[product].sell_orders.keys())[0]
     return (best_bid + best_ask) / 2
+
+def get_price_history_from_state(state, product):
+    if not state.traderData:
+        return initialize_trader_data(product)
+    else:
+        return json.loads(state.traderData)[product]
         
