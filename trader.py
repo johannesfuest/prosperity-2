@@ -54,14 +54,14 @@ class Trader:
             print("## Buy Order depth : " + str(len(order_depth.buy_orders)) + ", Sell order depth : " + str(len(order_depth.sell_orders)))
             if len(order_depth.sell_orders) != 0:
                 for ask, ask_amount in order_depth.sell_orders.items():
-                    if int(ask) < acceptable_price * (1 - spread):
+                    if int(ask) < acceptable_price * (1 - (spread/2)):
                         print("## BUY", str(-ask_amount) + "x", ask)
                         orders.append(Order(product, ask, -ask_amount))
                 
     
             if len(order_depth.buy_orders) != 0:
                 for bid, bid_amount in order_depth.buy_orders.items():
-                    if int(bid) > acceptable_price * (1 + spread):
+                    if int(bid) > acceptable_price * (1 + (spread/2)):
                         print("## SELL", str(bid_amount) + "x", bid)
                         orders.append(Order(product, bid, -bid_amount))
             # add lowballing buy oders
@@ -103,7 +103,7 @@ class Trader:
 def get_product_spread(state, product):
     price_history = get_price_history_from_state(state, product)
     if product == "AMETHYSTS":
-        return 0.000085
+        return 0.00015
     elif product == "STARFRUIT":
         return np.std(price_history) / np.mean(price_history)        
     
