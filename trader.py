@@ -90,7 +90,7 @@ class Trader:
             results[product] = valid_orders
         return orders
 
-def get_acceptable_price_for_product(product, state):
+def get_acceptable_price_for_product(product, state, strategy=None):
     product_trade_history = state.market_trades.get(product, [])
     product_order_depth = state.order_depths[product]
     if len(product_trade_history) == 0:
