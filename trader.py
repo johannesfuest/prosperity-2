@@ -54,20 +54,20 @@ class Trader:
             spread = get_product_spread(state, product)
             if len(order_depth.sell_orders) != 0:
                 best_ask, best_ask_amount = list(order_depth.sell_orders.items())[0]
-                if int(best_ask) < acceptable_price * (1 - spread):
+                if int(best_ask) < acceptable_price * (1 - (spread/2)):
                     print("## BUY", str(-best_ask_amount) + "x", best_ask)
                     orders.append(Order(product, best_ask, -best_ask_amount))
     
             if len(order_depth.buy_orders) != 0:
                 best_bid, best_bid_amount = list(order_depth.buy_orders.items())[0]
-                if int(best_bid) > acceptable_price *(1 + spread):
+                if int(best_bid) > acceptable_price *(1 + (spread/2)):
                     print("## SELL", str(best_bid_amount) + "x", best_bid)
                     orders.append(Order(product, best_bid, -best_bid_amount))
             
             result[product] = orders
             traderData[product] = generate_trader_data(state, product)
             
-        orders = self.adjust_for_position_breaches(result, state, True)
+        #result = self.adjust_for_position_breaches(result, state, True)
         traderData = json.dumps(traderData)
         conversions = 1
         return result, conversions, traderData
@@ -93,25 +93,21 @@ class Trader:
                     valid_orders.append(order)
                 cur_position += order.quantity
             results[product] = valid_orders
-        return orders
+        return results
     
 def get_product_spread(state, product):
+    price_history = get_price_history_from_state(state, product)
     if product == "AMETHYSTS":
-        return 0.000001
-    elif product == "STARFRUIT":
-        return 0.00001
+        return 0.00015
     else:
-        return 0.0005
+        return np.std(price_history) / np.mean(price_history)
     
 
 def generate_trader_data(state, product):
-    if not state.traderData:
-        return initialize_trader_data(product)
-    else:
-        price_history_list = json.loads(state.traderData)[product]
-        price_history_list.pop(0)
-        price_history_list.append(get_mid_price_from_order_book(state.order_depths, product))
-        return price_history_list
+    price_history_list = get_price_history_from_state(state, product)
+    price_history_list.pop(0)
+    price_history_list.append(get_mid_price_from_order_book(state.order_depths, product))
+    return price_history_list
         
 
 def initialize_trader_data(product):
@@ -119,40 +115,40 @@ def initialize_trader_data(product):
     match product:
         case "AMETHYSTS":
             return [
-        9999.0,
-        10000.0,
-        10000.0,
-        10003.5,
-        9999.0,
-        10003.5,
-        10001.0,
-        10000.0,
-        10000.0,
-        10000.0,
-        9998.5,
-        9999.0,
-        10000.0,
-        10000.0,
-        10000.0,
-    ]
+            9999.0,
+            10000.0,
+            10000.0,
+            10003.5,
+            9999.0,
+            10003.5,
+            10001.0,
+            10000.0,
+            10000.0,
+            10000.0,
+            9998.5,
+            9999.0,
+            10000.0,
+            10000.0,
+            10000.0,
+            ]   
         
         case "STARFRUIT":
             return [
-                5053.0,
-                5053.5,
-                5052.5,
-                5053.5,
-                5053.0,
-                5053.0,
-                5052.0,
-                5051.5,
-                5052.0,
-                5051.5,
-                5052.5,
-                5051.0,
-                5053.5,
-                5049.5,
-                5051.0,
+            5053.0,
+            5053.5,
+            5052.5,
+            5053.5,
+            5053.0,
+            5053.0,
+            5052.0,
+            5051.5,
+            5052.0,
+            5051.5,
+            5052.5,
+            5051.0,
+            5053.5,
+            5049.5,
+            5051.0,
             ]
     
     
@@ -178,17 +174,13 @@ def get_acceptable_price_for_product(state, product):
         -0.00049075
         ])
     
-    if not state.traderData:
-        price_history = initialize_trader_data(product)
-    else:
-        price_history = json.loads(state.traderData)[product]
+    price_history = get_price_history_from_state(state, product)
 
-    price_history = np.array([1.0] + price_history)
-    
     if product == "AMETHYSTS":
-        return 10000
-    
-    predicted_price = np.dot(coefs, price_history)
+        return sum(price_history) / len(price_history)
+    else:
+        price_history = np.array([1.0] + price_history)
+        predicted_price = np.dot(coefs, price_history)
     return predicted_price
     
 
@@ -197,4 +189,10 @@ def get_mid_price_from_order_book(order_depth, product):
     best_bid = list(order_depth[product].buy_orders.keys())[0]
     best_ask = list(order_depth[product].sell_orders.keys())[0]
     return (best_bid + best_ask) / 2
+
+def get_price_history_from_state(state, product):
+    if not state.traderData:
+        return initialize_trader_data(product)
+    else:
+        return json.loads(state.traderData)[product]
         
