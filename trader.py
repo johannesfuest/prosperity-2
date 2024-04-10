@@ -1,6 +1,8 @@
-from datamodel import OrderDepth, UserId, TradingState, Order
-from typing import List, Dict, Tuple
 import string
+from typing import List
+
+from datamodel import Order, OrderDepth, TradingState, UserId
+
 
 class Trader:
 
@@ -24,8 +26,12 @@ class Trader:
         for product, listing in state.listings.items():
             print(f"#Listing: {listing}")
             print(f"# Listing for {product}:")
-            #print(f"## Symbol: {listing.symbol}")
-            #print(f"## Denomination: {listing.denomination}")
+            if type(listing) == dict:
+                print(listing)
+            else:
+                print(listing.product)
+            # print(f"## Symbol: {listing.symbol}")
+            # print(f"## Denomination: {listing.denomination}")
         print(f"# Own Trades: {state.own_trades}")
         print(f"# Market Trades: {state.market_trades}")
         print(f"# Position: {state.position}")
@@ -42,7 +48,7 @@ class Trader:
             print(f"# Product: {product}")
             order_depth: OrderDepth = state.order_depths[product]
             orders: List[Order] = []
-            acceptable_price = get_acceptable_price_for_product(product, state)
+            acceptable_price = 10000;  # Participant should calculate this value
             print("## Acceptable price : " + str(acceptable_price))
             print("## Buy Order depth : " + str(len(order_depth.buy_orders)) + ", Sell order depth : " + str(len(order_depth.sell_orders)))
             spread = 0.001 if product == "STARFRUIT" else 0.01
