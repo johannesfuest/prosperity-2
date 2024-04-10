@@ -1,6 +1,7 @@
 import string
 import json
 from typing import List
+import math
 
 import numpy as np
 from typing import List
@@ -56,18 +57,18 @@ class Trader:
                 for ask, ask_amount in order_depth.sell_orders.items():
                     if int(ask) < acceptable_price * (1 - (spread/2)):
                         print("## BUY", str(-ask_amount) + "x", ask)
-                        orders.append(Order(product, ask, -ask_amount))
+                        orders.append(Order(product, math.floor(ask), -ask_amount))
                 
     
             if len(order_depth.buy_orders) != 0:
                 for bid, bid_amount in order_depth.buy_orders.items():
                     if int(bid) > acceptable_price * (1 + (spread/2)):
                         print("## SELL", str(bid_amount) + "x", bid)
-                        orders.append(Order(product, bid, -bid_amount))
+                        orders.append(Order(product, math.ceil(bid), -bid_amount))
 
             # add some random orders
-            orders.append(Order(product, acceptable_price * (1 - spread), 1))
-            orders.append(Order(product, acceptable_price * (1 + spread), -1))
+            orders.append(Order(product, math.ceil(acceptable_price * (1 - spread)), 1))
+            orders.append(Order(product, math.floor(acceptable_price * (1 + spread)), -1))
             
             result[product] = orders
             traderData[product] = generate_trader_data(state, product)
