@@ -64,15 +64,15 @@ class Trader:
                     if int(bid) > acceptable_price * (1 + (spread/2)):
                         print("## SELL", str(bid_amount) + "x", bid)
                         orders.append(Order(product, bid, -bid_amount))
-            # add lowballing buy oders
-            # add highballing sell orders
-            # orders.append(Order(product, 500, 1))
-            # orders.append(Order(product, 20000, -1))
+
+            # add some random orders
+            orders.append(Order(product, acceptable_price * (1 - spread), 1))
+            orders.append(Order(product, acceptable_price * (1 + spread), -1))
             
             result[product] = orders
             traderData[product] = generate_trader_data(state, product)
             
-        #result = self.adjust_for_position_breaches(result, state, True)
+        result = self.adjust_for_position_breaches(result, state, True)
         traderData = json.dumps(traderData)
         conversions = 1
         return result, conversions, traderData
