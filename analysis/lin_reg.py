@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
+from tqdm import tqdm
 import pandas as pd
 from sklearn.linear_model import Ridge, RidgeCV
 from sklearn.model_selection import cross_val_score
@@ -51,20 +52,22 @@ def lin_reg(data: pd.DataFrame, num_timesteps: int) -> Tuple[float, np.ndarray]:
     # Get the coefficients from the final model
     coefs = ridge_final.coef_
     
-    return mean_mse, coefs
+    return mean_mse, coefs, ridge_final.intercept_
 
 def compare_mse(prices: pd.DataFrame, time_list: List[int]) -> None:
     best_mse = np.inf
     best_time = 0
     best_coefs = None
+    best_intercept = 0
     mean_mses = []
-    for time in time_list:
-        mean_mse, coefs = lin_reg(prices, time)
+    for time in tqdm(time_list):
+        mean_mse, coefs, intercept = lin_reg(prices, time)
         mean_mses.append(mean_mse)
         if mean_mse < best_mse:
             best_mse = mean_mse
             best_time = time
             best_coefs = coefs
+            best_intercepts = intercept
 
     mean_mses = pd.DataFrame(mean_mses, columns=['cv_score'])
     print(mean_mses)
@@ -72,6 +75,7 @@ def compare_mse(prices: pd.DataFrame, time_list: List[int]) -> None:
     print(f"Best MSE: {best_mse}")
     print(f"Best time: {best_time}")
     print(f"Best coefs: {best_coefs}")
+    print(f"Best Intercepts: {best_intercepts}")
     return best_mse, best_time, best_coefs
 
 if __name__ == '__main__':
@@ -80,6 +84,6 @@ if __name__ == '__main__':
     compare_mse(prices, np.arange(1, 50, 1))
     # Best MSE: 1.9167838633948413
     # Best time: 15
-    # Best coefs: [ 0.2920955   0.20671938  0.14077617  0.10025522  0.08580541  0.06038695
+    # Best coefs: [0.2920955   0.20671938  0.14077617  0.10025522  0.08580541  0.06038695
     #   0.03888277  0.00594952  0.02262225  0.01394354  0.0164973   0.00535559
     #   0.00513494  0.00572899 -0.00049075]
