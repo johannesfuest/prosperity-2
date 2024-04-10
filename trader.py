@@ -67,8 +67,8 @@ class Trader:
                         orders.append(Order(product, math.ceil(bid), -bid_amount))
 
             # add some random orders
-            orders.append(Order(product, math.ceil(acceptable_price * (1 - (2.5 * spread))), 1))
-            orders.append(Order(product, math.floor(acceptable_price * (1 + (2.5 * spread))), -1))
+            orders.append(Order(product, math.ceil(acceptable_price * (1 -  2.5 * spread)), 1))
+            orders.append(Order(product, math.floor(acceptable_price * (1 + 2.5 * spread)), -1))
             
             result[product] = orders
             traderData[product] = generate_trader_data(state, product)
@@ -202,4 +202,3 @@ def get_price_history_from_state(state, product):
         return initialize_trader_data(product)
     else:
         return json.loads(state.traderData)[product]
-        
