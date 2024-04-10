@@ -1,5 +1,8 @@
 import string
+import json
 from typing import List
+
+import numpy as np
 
 from datamodel import Order, OrderDepth, TradingState, UserId
 
@@ -40,14 +43,15 @@ class Trader:
         print("Start Evaluation:")
         print("=================\n")
         result = {}
+        traderData = {}
         for product in state.order_depths:
-            print(f"# Product: {product}")
             order_depth: OrderDepth = state.order_depths[product]
             orders: List[Order] = []
-            acceptable_price = get_acceptable_price_for_product(product, state)
+            acceptable_price = get_acceptable_price_for_product(state, product)
             print("## Acceptable price : " + str(acceptable_price))
             print("## Buy Order depth : " + str(len(order_depth.buy_orders)) + ", Sell order depth : " + str(len(order_depth.sell_orders)))
-            spread = 0.001 if product == "STARFRUIT" else 0.01
+
+            spread = get_product_spread(state, product)
             if len(order_depth.sell_orders) != 0:
                 best_ask, best_ask_amount = list(order_depth.sell_orders.items())[0]
                 if int(best_ask) < acceptable_price * (1 - spread):
@@ -61,11 +65,10 @@ class Trader:
                     orders.append(Order(product, best_bid, -best_bid_amount))
             
             result[product] = orders
-        print(f"Positions{state.position}")
+            traderData[product] = generate_trader_data(state, product)
             
         orders = self.adjust_for_position_breaches(result, state, True)
-        traderData = "SAMPLE" # String value holding Trader state data required. It will be delivered as TradingState.traderData on next execution.
-        
+        traderData = json.dumps(traderData)
         conversions = 1
         return result, conversions, traderData
     
@@ -91,6 +94,7 @@ class Trader:
                 cur_position += order.quantity
             results[product] = valid_orders
         return orders
+<<<<<<< HEAD
 
 <<<<<<< HEAD
 def get_acceptable_price_for_product(product, state, strategy=None):
@@ -103,9 +107,109 @@ def get_acceptable_price_for_product(product, state):
         return get_mid_price_from_order_book(product_order_depth)
     else:
         return product_trade_history[0].price
+=======
+>>>>>>> e453612 (added ridge regression support to trader class)
     
-def get_mid_price_from_order_book(order_depth):
-    best_bid = list(order_depth.buy_orders.keys())[0]
-    best_ask = list(order_depth.sell_orders.keys())[0]
+def get_product_spread(state, product):
+    if product == "AMETHYSTS":
+        return 0.000001
+    elif product == "STARFRUIT":
+        return 0.00001
+    else:
+        return 0.0005
+    
+
+def generate_trader_data(state, product):
+    if not state.traderData:
+        return initialize_trader_data(product)
+    else:
+        price_history_list = json.loads(state.traderData)[product]
+        price_history_list.pop(0)
+        price_history_list.append(get_mid_price_from_order_book(state.order_depths, product))
+        return price_history_list
+        
+
+def initialize_trader_data(product):
+
+    match product:
+        case "AMETHYSTS":
+            return [
+        9999.0,
+        10000.0,
+        10000.0,
+        10003.5,
+        9999.0,
+        10003.5,
+        10001.0,
+        10000.0,
+        10000.0,
+        10000.0,
+        9998.5,
+        9999.0,
+        10000.0,
+        10000.0,
+        10000.0,
+    ]
+        
+        case "STARFRUIT":
+            return [
+                5053.0,
+                5053.5,
+                5052.5,
+                5053.5,
+                5053.0,
+                5053.0,
+                5052.0,
+                5051.5,
+                5052.0,
+                5051.5,
+                5052.5,
+                5051.0,
+                5053.5,
+                5049.5,
+                5051.0,
+            ]
+    
+    
+
+def get_acceptable_price_for_product(state, product):
+
+    coefs = np.array([
+        1.7044926379649041,
+        0.2920955,
+        0.20671938,
+        0.14077617,
+        0.10025522,
+        0.08580541 ,
+        0.06038695,
+        0.03888277,
+        0.00594952,
+        0.02262225,
+        0.01394354,
+        0.0164973,
+        0.00535559,
+        0.00513494,
+        0.00572899,
+        -0.00049075
+        ])
+    
+    if not state.traderData:
+        price_history = initialize_trader_data(product)
+    else:
+        price_history = json.loads(state.traderData)[product]
+
+    price_history = np.array([1.0] + price_history)
+    
+    if product == "AMETHYSTS":
+        return 10000
+    
+    predicted_price = np.dot(coefs, price_history)
+    return predicted_price
+    
+
+    
+def get_mid_price_from_order_book(order_depth, product):    
+    best_bid = list(order_depth[product].buy_orders.keys())[0]
+    best_ask = list(order_depth[product].sell_orders.keys())[0]
     return (best_bid + best_ask) / 2
         
