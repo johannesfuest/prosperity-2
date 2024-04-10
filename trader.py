@@ -67,8 +67,8 @@ class Trader:
                         orders.append(Order(product, math.ceil(bid), -bid_amount))
 
             # add some random orders
-            orders.append(Order(product, 9996, 1))
-            orders.append(Order(product, 10004, -1))
+            orders.append(Order(product, math.ceil(acceptable_price * (1 - (2.5 * spread))), 1))
+            orders.append(Order(product, math.floor(acceptable_price * (1 + (2.5 * spread))), -1))
             
             result[product] = orders
             traderData[product] = generate_trader_data(state, product)
