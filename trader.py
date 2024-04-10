@@ -48,26 +48,31 @@ class Trader:
             order_depth: OrderDepth = state.order_depths[product]
             orders: List[Order] = []
             acceptable_price = get_acceptable_price_for_product(state, product)
-            print("## Acceptable price : " + str(acceptable_price))
-            print("## Buy Order depth : " + str(len(order_depth.buy_orders)) + ", Sell order depth : " + str(len(order_depth.sell_orders)))
-
             spread = get_product_spread(state, product)
+            print("## Acceptable price : " + str(acceptable_price))
+            print("## We Buy below : " + str(acceptable_price * (1 - spread)) + " and sell above : " + str(acceptable_price * (1 + spread)))
+            print("## Buy Order depth : " + str(len(order_depth.buy_orders)) + ", Sell order depth : " + str(len(order_depth.sell_orders)))
             if len(order_depth.sell_orders) != 0:
-                best_ask, best_ask_amount = list(order_depth.sell_orders.items())[0]
-                if int(best_ask) < acceptable_price * (1 - spread):
-                    print("## BUY", str(-best_ask_amount) + "x", best_ask)
-                    orders.append(Order(product, best_ask, -best_ask_amount))
+                for ask, ask_amount in order_depth.sell_orders.items():
+                    if int(ask) < acceptable_price * (1 - spread):
+                        print("## BUY", str(-ask_amount) + "x", ask)
+                        orders.append(Order(product, ask, -ask_amount))
+                
     
             if len(order_depth.buy_orders) != 0:
-                best_bid, best_bid_amount = list(order_depth.buy_orders.items())[0]
-                if int(best_bid) > acceptable_price *(1 + spread):
-                    print("## SELL", str(best_bid_amount) + "x", best_bid)
-                    orders.append(Order(product, best_bid, -best_bid_amount))
+                for bid, bid_amount in order_depth.buy_orders.items():
+                    if int(bid) > acceptable_price * (1 + spread):
+                        print("## SELL", str(bid_amount) + "x", bid)
+                        orders.append(Order(product, bid, -bid_amount))
+            # add lowballing buy oders
+            # add highballing sell orders
+            # orders.append(Order(product, 500, 1))
+            # orders.append(Order(product, 20000, -1))
             
             result[product] = orders
             traderData[product] = generate_trader_data(state, product)
             
-        orders = self.adjust_for_position_breaches(result, state, True)
+        result = self.adjust_for_position_breaches(result, state, True)
         traderData = json.dumps(traderData)
         conversions = 1
         return result, conversions, traderData
@@ -93,11 +98,11 @@ class Trader:
                     valid_orders.append(order)
                 cur_position += order.quantity
             results[product] = valid_orders
-        return orders
+        return results
     
 def get_product_spread(state, product):
     if product == "AMETHYSTS":
-        return 0.000001
+        return 0.000085
     elif product == "STARFRUIT":
         return 0.00001
     else:
@@ -114,30 +119,30 @@ def generate_trader_data(state, product):
         return price_history_list
         
 
-def initialize_trader_data(product):
+def initialize_trader_data(product, length=15):
 
     match product:
         case "AMETHYSTS":
-            return [
-        9999.0,
-        10000.0,
-        10000.0,
-        10003.5,
-        9999.0,
-        10003.5,
-        10001.0,
-        10000.0,
-        10000.0,
-        10000.0,
-        9998.5,
-        9999.0,
-        10000.0,
-        10000.0,
-        10000.0,
-    ]
+            inital_data =  [
+                9999.0,
+                10000.0,
+                10000.0,
+                10003.5,
+                9999.0,
+                10003.5,
+                10001.0,
+                10000.0,
+                10000.0,
+                10000.0,
+                9998.5,
+                9999.0,
+                10000.0,
+                10000.0,
+                10000.0,
+            ]
         
         case "STARFRUIT":
-            return [
+            inital_data = [
                 5053.0,
                 5053.5,
                 5052.5,
@@ -154,6 +159,7 @@ def initialize_trader_data(product):
                 5049.5,
                 5051.0,
             ]
+    return inital_data[-length:]
     
     
 
@@ -182,13 +188,12 @@ def get_acceptable_price_for_product(state, product):
         price_history = initialize_trader_data(product)
     else:
         price_history = json.loads(state.traderData)[product]
-
-    price_history = np.array([1.0] + price_history)
     
     if product == "AMETHYSTS":
-        return 10000
-    
-    predicted_price = np.dot(coefs, price_history)
+        predicted_price = sum(price_history) / len(price_history)
+    elif product == "STARFRUIT":
+        price_history = np.array([1.0] + price_history)
+        predicted_price = np.dot(coefs, price_history)
     return predicted_price
     
 
