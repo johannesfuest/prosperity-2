@@ -49,30 +49,27 @@ class Trader:
             order_depth: OrderDepth = state.order_depths[product]
             orders: List[Order] = []
             acceptable_price = get_acceptable_price_for_product(state, product)
-            buy_edge = get_product_edge(state, product, "buy")
-            sell_edge = get_product_edge(state, product, "sell")
-            # For now just trying +1 and -1 edges
+            buy_spread = get_product_edge(state, product, "buy")
+            sell_spread = get_product_edge(state, product, "sell")
             print("## Acceptable price : " + str(acceptable_price))
-            print("## We Buy below : " + str(acceptable_price * (1 - buy_edge/2)) + " and sell above : " + str(acceptable_price * (1 + sell_edge/2)))
+            print("## We Buy below : " + str(acceptable_price * (1 - buy_spread)) + " and sell above : " + str(acceptable_price * (1 + sell_spread)))
             print("## Buy Order depth : " + str(len(order_depth.buy_orders)) + ", Sell order depth : " + str(len(order_depth.sell_orders)))
             if len(order_depth.sell_orders) != 0:
                 for ask, ask_amount in order_depth.sell_orders.items():
-                    if int(ask) < math.floor(acceptable_price -1):
+                    if int(ask) < acceptable_price * (1 - (buy_spread)):
                         print("## BUY", str(-ask_amount) + "x", ask)
                         orders.append(Order(product, math.floor(ask), -ask_amount))
                 
     
             if len(order_depth.buy_orders) != 0:
                 for bid, bid_amount in order_depth.buy_orders.items():
-                    if int(bid) > math.ceil(acceptable_price +1):
+                    if int(bid) > acceptable_price * (1 + (sell_spread)):
                         print("## SELL", str(bid_amount) + "x", bid)
                         orders.append(Order(product, math.ceil(bid), -bid_amount))
 
             # add some random orders
-            # orders.append(Order(product, math.ceil(acceptable_price - 3), 1))
-            # orders.append(Order(product, math.floor(acceptable_price + 3), -1))
-            # orders.append(Order(product, math.ceil(acceptable_price - 4), 1))
-            # orders.append(Order(product, math.floor(acceptable_price + 2), -1))
+            # orders.append(Order(product, math.ceil(acceptable_price * (1 -  2.5 * buy_spread)), 3))
+            # orders.append(Order(product, math.floor(acceptable_price * (1 + 2.5 * sell_spread)), -3))
             
             result[product] = orders
             traderData[product] = generate_trader_data(state, product)
@@ -108,12 +105,12 @@ class Trader:
 def get_product_edge(state, product, buy_sell):
     price_history = get_price_history_from_state(state, product)
     if product == "AMETHYSTS":
-        return 0.00015
+        return 0.00015/2
     elif product == "STARFRUIT":
         if buy_sell == "buy":
-            return (np.std(price_history) / np.mean(price_history))
+            return (np.std(price_history) / np.mean(price_history)) / 2
         else:
-            return (np.std(price_history) / np.mean(price_history))
+            return (np.std(price_history) / np.mean(price_history)) / 2
     
 
 def generate_trader_data(state, product):
