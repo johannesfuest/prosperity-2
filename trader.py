@@ -60,18 +60,18 @@ class Trader:
                 buy_thresholds[product] = int(np.floor(acceptable_price * (1 - buy_spread)))
                 sell_thresholds[product] = int(np.ceil(acceptable_price * (1 + sell_spread)))
             else:
-                buy_thresholds[product] = int(np.floor(acceptable_price * (1 - 0.95*buy_spread)))
-                sell_thresholds[product] = int(np.ceil(acceptable_price * (1 + 1.05*sell_spread)))
+                buy_thresholds[product] = int(np.floor(acceptable_price * (1 - 0.5*buy_spread)))
+                sell_thresholds[product] = int(np.ceil(acceptable_price * (1 + 1.5*sell_spread)))
             if len(order_depth.sell_orders) != 0:
                 for ask, ask_amount in order_depth.sell_orders.items():
-                    if int(ask) < buy_thresholds[product]:
+                    if int(ask) < acceptable_price * (1 - (buy_spread)):
                         print("## BUY", str(-ask_amount) + "x", ask)
                         orders.append(Order(product, math.floor(ask), -ask_amount))
                 
     
             if len(order_depth.buy_orders) != 0:
                 for bid, bid_amount in order_depth.buy_orders.items():
-                    if int(bid) > sell_thresholds[product]:
+                    if int(bid) > acceptable_price * (1 + (sell_spread)):
                         print("## SELL", str(bid_amount) + "x", bid)
                         orders.append(Order(product, math.ceil(bid), -bid_amount))
             
