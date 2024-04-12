@@ -16,6 +16,11 @@ listings = {
 		product="STARFRUIT", 
 		denomination= "SEASHELLS"
 	),
+    "ORCHIDS": Listing(
+		symbol="ORCHIDS", 
+		product="ORCHIDS", 
+		denomination= "SEASHELLS"
+	),
 }
 
 order_depths = {
@@ -26,12 +31,17 @@ order_depths = {
 	"STARFRUIT": OrderDepth(
 		buy_orders={142: 3, 141: 5},
 		sell_orders={144: -5, 145: -8}
+	),
+    "ORCHIDS": OrderDepth(
+		buy_orders={1200: 3, 1300: 5},
+		sell_orders={1500: -5, 1240: -8}
 	),	
 }
 
 own_trades = {
 	"AMETHYSTS": [],
-	"STARFRUIT": []
+	"STARFRUIT": [],
+    "ORCHIDS": []
 }
 
 market_trades = {
@@ -45,12 +55,14 @@ market_trades = {
 			timestamp=900
 		)
 	],
-	"STARFRUIT": []
+	"STARFRUIT": [],
+    "ORCHIDS": []
 }
 
 position = {
 	"AMETHYSTS": 3,
-	"STARFRUIT": -5
+	"STARFRUIT": -5,
+    "ORCHIDS": 0
 }
 
 observations = {}
