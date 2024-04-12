@@ -16,7 +16,8 @@ def main(filename):
                 if csv_start and not csv_end:
                     f_out_1.write(line)
                 if line.strip() == "":
-                    csv_end = True 
+                    csv_end = True
+                    break
         
         for line in f:
             if line.startswith('Trade History:'):
