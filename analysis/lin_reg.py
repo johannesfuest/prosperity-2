@@ -11,17 +11,14 @@ from sklearn.linear_model import Ridge, RidgeCV
 from sklearn.model_selection import cross_val_score
 
 
-def load_data(product: str, price_data: bool) -> pd.DataFrame:
+def load_data(product: str, day_list: List[int]= [-2,-1,0], price_data: bool=True) -> pd.DataFrame:
+    
     if price_data:
-        data_2 = pd.read_csv('data/prices_round_1_day_-2.csv', sep=';')
-        data_1 = pd.read_csv('data/prices_round_1_day_-1.csv', sep=';')
-        data_0 = pd.read_csv('data/prices_round_1_day_0.csv', sep=';')
+        dfs = [pd.read_csv(f'data/prices_round_1_day_{day}.csv', sep=';') for day in day_list]
     else:
-        data_2 = pd.read_csv('data/trades_round_1_day_-2_nn.csv', sep=';')
-        data_1 = pd.read_csv('data/trades_round_1_day_-1_nn.csv', sep=';')
-        data_0 = pd.read_csv('data/trades_round_1_day_0_nn.csv', sep=';')
+        dfs = [pd.read_csv(f'data/trades_round_1_day_{day}_nn.csv', sep=';') for day in day_list]
 
-    data = pd.concat([data_2, data_1, data_0], axis=0).reset_index(drop=True)
+    data = pd.concat(dfs, axis=0).reset_index(drop=True)
     data = data[data['product'] == product]
     return data
 
@@ -80,7 +77,7 @@ def compare_mse(prices: pd.DataFrame, time_list: List[int]) -> None:
 
 if __name__ == '__main__':
     product = 'STARFRUIT'
-    prices = load_data(product, price_data=True)
+    prices = load_data(product, [0], price_data=True)
     compare_mse(prices, np.arange(1, 50, 1))
     # Best MSE: 1.9167838633948413
     # Best time: 15
