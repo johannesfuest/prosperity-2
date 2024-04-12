@@ -5,6 +5,19 @@ def main(filename):
     # open the file and find the line with the trades
     # Trade History:
     with open(filename, 'r') as f:
+        csv_start = False
+        csv_end = False
+        for line in f:
+            if line.startswith('Activities log:'):
+                csv_start = True
+                break
+        with open('data/rounds.csv', 'w') as f_out_1:
+            for line in f:
+                if csv_start and not csv_end:
+                    f_out_1.write(line)
+                if line.strip() == "":
+                    csv_end = True 
+        
         for line in f:
             if line.startswith('Trade History:'):
                 break
