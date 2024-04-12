@@ -3,3 +3,5 @@ matplotlib
 seaborn
 jsonpickle
 prosperity2bt
+tqdm
+scikit-learn
