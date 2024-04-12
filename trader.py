@@ -54,25 +54,32 @@ class Trader:
             acceptable_price = get_acceptable_price_for_product(state, product)
             buy_spread = get_product_edge(state, product, "buy")
             sell_spread = get_product_edge(state, product, "sell")
-            print("## Acceptable price : " + str(acceptable_price))
-            print("## We Buy below : " + str(acceptable_price * (1 - buy_spread)) + " and sell above : " + str(acceptable_price * (1 + sell_spread)))
-            print("## Buy Order depth : " + str(len(order_depth.buy_orders)) + ", Sell order depth : " + str(len(order_depth.sell_orders)))
-            if product == 'AMETHYSTS':
-                buy_thresholds[product] = int(np.floor(acceptable_price * (1 - buy_spread)))
-                sell_thresholds[product] = int(np.ceil(acceptable_price * (1 + sell_spread)))
-            else:
-                buy_thresholds[product] = int(np.floor(acceptable_price * (1 - 0.5*buy_spread)))
-                sell_thresholds[product] = int(np.ceil(acceptable_price * (1 + 1.5*sell_spread)))
+            edge_factor_buy = {
+                "AMETHYSTS": 1,
+                "STARFRUIT": 0.25,
+                "ORCHIDS": 1000
+            }
+            edge_factor_sell = {
+                "AMETHYSTS": 1,
+                "STARFRUIT": 0.25,
+                "ORCHIDS": 1000
+            }
+            buy_thres = int(np.floor(acceptable_price * (1 - edge_factor_buy[product] * buy_spread)))
+            sell_thresh = int(np.ceil(acceptable_price * (1 + edge_factor_sell[product] * sell_spread)))
+            buy_thresholds[product] = buy_thres
+            sell_thresholds[product] = sell_thresh
+            print(f"## Acceptable price : {acceptable_price}")
+            print(f"## We buy at : {buy_thres} and sell at : {sell_thresh}")
+            print(f"## Buy Order depth : {len(order_depth.buy_orders)}, Sell order depth : {len(order_depth.sell_orders)}")
             if len(order_depth.sell_orders) != 0:
                 for ask, ask_amount in order_depth.sell_orders.items():
-                    if int(ask) < acceptable_price * (1 - (buy_spread)):
+                    if int(ask) <= buy_thresholds[product]:
                         print("## BUY", str(-ask_amount) + "x", ask)
                         orders.append(Order(product, math.floor(ask), -ask_amount))
-                
     
             if len(order_depth.buy_orders) != 0:
                 for bid, bid_amount in order_depth.buy_orders.items():
-                    if int(bid) > acceptable_price * (1 + (sell_spread)):
+                    if int(bid) >= sell_thresholds[product]:
                         print("## SELL", str(bid_amount) + "x", bid)
                         orders.append(Order(product, math.ceil(bid), -bid_amount))
             
@@ -159,8 +166,8 @@ class Trader:
                     numbers = split_number(-n_sell_order)
                     for i, n in enumerate(numbers[1:]):
                         if n != 0:
-                            results[product].append(Order(product, sell_threshold[product] + 1 + i, -n))
-                    sell_order = Order(product, sell_threshold[product] + 1, -numbers[0])
+                            results[product].append(Order(product, sell_threshold[product] + 2 + i, -n))
+                    sell_order = Order(product, sell_threshold[product] + 2, -numbers[0])
                 results[product].append(sell_order)
             if n_buy_order > 0:
                 found_best = False
@@ -179,8 +186,8 @@ class Trader:
                     numbers = split_number(n_buy_order)
                     for i, n in enumerate(numbers[1:]):
                         if n != 0:
-                            results[product].append(Order(product, buy_threshold[product] - 1 - i, n))
-                    buy_order = Order(product, buy_threshold[product] - 1, numbers[0])
+                            results[product].append(Order(product, buy_threshold[product] - 2 - i, n))
+                    buy_order = Order(product, buy_threshold[product] - 2, numbers[0])
                 results[product].append(buy_order)
         return results
             
@@ -191,14 +198,14 @@ def get_product_edge(state, product, buy_sell):
         return 0.00015/2
     elif product == "STARFRUIT":
         if buy_sell == "buy":
-            return (np.std(price_history) / np.mean(price_history)) / 2
+            return (np.std(price_history) / np.mean(price_history)) 
         else:
-            return (np.std(price_history) / np.mean(price_history)) / 2
+            return (np.std(price_history) / np.mean(price_history))
     elif product == "ORCHIDS":
         if buy_sell == "buy":
-            return (np.std(price_history) / np.mean(price_history)) / 2
+            return (np.std(price_history) / np.mean(price_history))
         else:
-            return (np.std(price_history) / np.mean(price_history)) / 2
+            return (np.std(price_history) / np.mean(price_history))
     
 
 def generate_trader_data(state, product):
@@ -232,6 +239,7 @@ def initialize_trader_data(product, length=15):
         
         case "STARFRUIT":
             inital_data = [
+                # end of day 0 before round 1 start
                 5053.0,
                 5053.5,
                 5052.5,
@@ -247,6 +255,7 @@ def initialize_trader_data(product, length=15):
                 5053.5,
                 5049.5,
                 5051.0,
+                
             ]
         case "ORCHIDS":
             inital_data = [
@@ -273,6 +282,7 @@ def initialize_trader_data(product, length=15):
 def get_acceptable_price_for_product(state, product):
 
     star_fruit_coefs = np.array([
+        #coeffs from round 1 submission
         1.7044926379649041,
         0.2920955,
         0.20671938,
@@ -289,6 +299,18 @@ def get_acceptable_price_for_product(state, product):
         0.00513494,
         0.00572899,
         -0.00049075
+        
+        #coeffs using only day 0 to train
+        # 13.156199936551275,
+        # 0.30189398,
+        # 0.21454386,
+        # 0.13574109,
+        # 0.11238089,
+        # 0.06955258,
+        # 0.06800676,
+        # 0.05140635,
+        # 0.0071232,
+        # 0.03675125
         ])
     
     price_history = get_price_history_from_state(state, product)

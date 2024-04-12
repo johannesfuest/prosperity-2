@@ -77,10 +77,22 @@ def compare_mse(prices: pd.DataFrame, time_list: List[int]) -> None:
 
 if __name__ == '__main__':
     product = 'STARFRUIT'
-    prices = load_data(product, [0], price_data=True)
+    prices = load_data(product, price_data=True)
     compare_mse(prices, np.arange(1, 50, 1))
+    
+    
+    #Round 1 submission
     # Best MSE: 1.9167838633948413
     # Best time: 15
     # Best coefs: [0.2920955   0.20671938  0.14077617  0.10025522  0.08580541  0.06038695
     #   0.03888277  0.00594952  0.02262225  0.01394354  0.0164973   0.00535559
     #   0.00513494  0.00572899 -0.00049075]
+    # Best Intercepts: 1.7044926379649041
+    
+    
+    # Training only on day 0:
+    # Best MSE: 1.899180336220135
+    # Best time: 9
+    # Best coefs: [0.30189398 0.21454386 0.13574109 0.11238089 0.06955258 0.06800676
+    #  0.05140635 0.0071232  0.03675125]
+    # Best Intercepts: 13.156199936551275
