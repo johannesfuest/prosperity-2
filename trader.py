@@ -14,6 +14,7 @@ class Trader:
         self.limits = {
             "AMETHYSTS": 20,
             "STARFRUIT": 20,
+            "ORCHIDS": 100,
         } 
         
     def print_input_state(self, state: TradingState):
@@ -96,9 +97,9 @@ class Trader:
             cur_position = state.position.get(product, 0)
             tmp_cur_position = cur_position
             for buy_order in buy_orders:
-                if tmp_cur_position + buy_order.quantity > 20:
+                if tmp_cur_position + buy_order.quantity > self.limits[product]:
                     if fill_until_position_breach:
-                        buy_order = Order(product, buy_order.price, 20 - tmp_cur_position)
+                        buy_order = Order(product, buy_order.price, self.limits[product] - tmp_cur_position)
                         valid_orders[product].append(buy_order)
                         break
                 else:
@@ -106,9 +107,9 @@ class Trader:
                     tmp_cur_position += buy_order.quantity
             tmp_cur_position = cur_position
             for sell_order in sell_orders:
-                if tmp_cur_position + sell_order.quantity < -20:
+                if tmp_cur_position + sell_order.quantity < (-self.limits[product]):
                     if fill_until_position_breach:
-                        sell_order = Order(product, sell_order.price, -20 - tmp_cur_position)
+                        sell_order = Order(product, sell_order.price, (-self.limits[product]) - tmp_cur_position)
                         valid_orders[product].append(sell_order)
                         tmp_cur_position += sell_order.quantity
                         break
@@ -193,6 +194,11 @@ def get_product_edge(state, product, buy_sell):
             return (np.std(price_history) / np.mean(price_history)) / 2
         else:
             return (np.std(price_history) / np.mean(price_history)) / 2
+    elif product == "ORCHIDS":
+        if buy_sell == "buy":
+            return (np.std(price_history) / np.mean(price_history)) / 2
+        else:
+            return (np.std(price_history) / np.mean(price_history)) / 2
     
 
 def generate_trader_data(state, product):
@@ -242,13 +248,31 @@ def initialize_trader_data(product, length=15):
                 5049.5,
                 5051.0,
             ]
+        case "ORCHIDS":
+            inital_data = [
+                1048.75,
+                1048.25,
+                1045.25,
+                1044.25,
+                1044.25,
+                1042.75,
+                1040.75,
+                1041.75,
+                1039.75,
+                1038.75,
+                1036.25,
+                1036.25,
+                1036.25,
+                1034.25,
+                1035.25,
+            ]
     return inital_data[-length:]
     
     
 
 def get_acceptable_price_for_product(state, product):
 
-    coefs = np.array([
+    star_fruit_coefs = np.array([
         1.7044926379649041,
         0.2920955,
         0.20671938,
@@ -271,9 +295,11 @@ def get_acceptable_price_for_product(state, product):
 
     if product == "AMETHYSTS":
         return sum(price_history) / len(price_history)
-    else:
+    elif product == "ORCHIDS":
+        return sum(price_history) / len(price_history)
+    elif product == "STARFRUIT":
         price_history = np.array([1.0] + list(reversed(price_history)))
-        predicted_price = np.dot(coefs, price_history)
+        predicted_price = np.dot(star_fruit_coefs, price_history)
     return predicted_price
     
 
