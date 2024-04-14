@@ -447,7 +447,62 @@ class Trader:
   
         return orders
     
+    def orchids_strategy2(self, state : TradingState) -> List[Order]:
+        """
+        Returns a list of orders with trades of orchids.
+        """
+        orders = []
+    
+        position_orchids = self.get_position('ORCHIDS', state)
 
+        bid_volume = self.POSITION_LIMITS['ORCHIDS'] - position_orchids
+        ask_volume = - self.POSITION_LIMITS['ORCHIDS'] - position_orchids
+
+        best_bid, best_bid_amount = self.get_best_bid('ORCHIDS', state)
+        best_ask, best_ask_amount  = self.get_best_ask('ORCHIDS', state)
+
+        mid_price = self.get_mid_price('ORCHIDS', state)
+
+        spread = (best_ask - best_bid) / 2
+
+        observations = state.observations
+        conversion_observations = observations.conversionObservations
+        orchid_observations = conversion_observations['ORCHIDS']
+
+        bid_price_south = orchid_observations.bidPrice
+        ask_price_south = orchid_observations.askPrice
+        transport_fees = orchid_observations.transportFees
+        export_tariff = orchid_observations.exportTariff
+        import_tariff = orchid_observations.importTariff
+        sunlight = orchid_observations.sunlight
+        humidity = orchid_observations.humidity
+
+        buy_price_south = ask_price_south + transport_fees + import_tariff
+        sell_price_south = bid_price_south - transport_fees - export_tariff
+
+        expected_profit_buying = 0
+        expected_profit_selling = 0
+
+        if position_orchids != 0:
+            conversion = -position_orchids
+        else:
+            conversion = 0
+
+        if best_ask < sell_price_south:
+            #orders.append(Order('ORCHIDS', math.floor(best_ask), bid_volume))
+            expected_profit_buying = sell_price_south - best_ask
+        
+        if best_bid > buy_price_south:
+            #orders.append(Order('ORCHIDS', math.floor(best_bid), ask_volume))
+            expected_profit_selling = best_bid - buy_price_south
+
+        if expected_profit_buying > 0 and expected_profit_buying > expected_profit_selling:
+            orders.append(Order('ORCHIDS', math.floor(best_ask), bid_volume))
+
+        if expected_profit_selling > 0 and expected_profit_selling > expected_profit_buying:
+            orders.append(Order('ORCHIDS', math.floor(best_bid), ask_volume))
+
+        return orders, conversion
 
     def run(self, state: TradingState) -> Dict[str, List[Order]]:
         """
@@ -539,76 +594,6 @@ class Trader:
         conversions = 0
         return result, conversions, traderData
 
-
-
-
-
-# class Trader:
-
-#     def __init__(self):
-#         self.limits = {
-#             "AMETHYSTS": 20,
-#             "STARFRUIT": 20,
-#             "ORCHIDS": 100,
-#         } 
-#         self.orchid_df = pd.DataFrame()
-
-#     def __post_init__(self):
-#         self.orchid_df = load_data()
-
-#     def run(self, state: TradingState):
-#         self.update_prices(state)
-#         return price
-
-#     def update_prices_history(self, own_trades: Dict[Symbol, List[Trade]], market_trades: Dict[Symbol, List[Trade]]):
-#         for symbol in self.limits.keys():
-#             recent_trades = []
-#             # if symbol in own_trades:
-#             #     recent_trades.extend(own_trades[symbol])
-#             if symbol in market_trades:
-#                 recent_trades.extend(market_trades[symbol])
-
-#             recent_trades.sort(key=lambda trade: trade.timestamp)
-
-#             for trade in recent_trades:
-#                 self.prices_history[symbol].append(trade.price)
-    
-#     def update_mid_prices_history(self, state):
-#         for symbol in self.PRODUCTS:
-#             mid_price = self.get_mid_price(symbol, state)
-
-#             self.mid_prices_history[symbol].append(mid_price)
-
-#             while len(self.mid_prices_history[symbol]) > self.window_size:
-#                 self.mid_prices_history[symbol].pop(0)
-    
-#     def get_mid_price(self, product, state : TradingState):
-
-#         default_price = self.ema_prices[product]
-#         if default_price is None:
-#             default_price = self.DEFAULT_PRICES[product]
-
-#         if product not in state.order_depths:
-#             return default_price
-
-#         market_bids = state.order_depths[product].buy_orders
-#         if len(market_bids) == 0:
-#             # There are no bid orders in the market (midprice undefined)
-#             return default_price
-        
-#         market_asks = state.order_depths[product].sell_orders
-#         if len(market_asks) == 0:
-#             # There are no bid orders in the market (mid_price undefined)
-#             return default_price
-        
-#         best_bid = max(market_bids)
-#         best_ask = min(market_asks)
-#         return (best_bid + best_ask)/2  
-
-    
-
-
-
 def calculate_la_stat_ewm(
     df: pd.DataFrame,
     col: str,
@@ -664,7 +649,7 @@ def calculate_orchid_price(df):
     ewm = pd.concat(ewm_period, axis=1)
     
     COEFS = [0.03925727, 0.00445401, 0.00366386]
-    INTERCEPT = 0.0
+    INTERCEPT = -0.018970904005940342
     ewm = ewm.iloc[-1]
     prev_price = df["ORCHIDS"].iloc[-1]
     all_neg = (ewm < 0).all() *  0.07510591

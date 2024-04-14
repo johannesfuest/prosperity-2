@@ -103,12 +103,10 @@ def compute_regression(params, df, lag, response="ORCHIDS"):
 
     response_data = df[response].diff().iloc[1:]
     
-    # ridge = RidgeCV()
-    # ridge.fit(ewm, response_data)
-    
     # best_alpha = ridge.alpha_
     ridge_final = Ridge(alpha=1000)
-    # [0.03925727 0.00445401 0.00366386 0.07510591 0.        ]
+    # coefs: [0.03925727 0.00445401 0.00366386 0.07510591 0.        ]
+    # intercept: -0.018970904005940342
     ridge_final.fit(ewm, response_data)
     
     mse_scores = -cross_val_score(ridge_final, ewm, response_data, scoring='neg_mean_squared_error', cv=5)
