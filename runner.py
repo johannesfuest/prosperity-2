@@ -1,7 +1,7 @@
 import time
 
 from datamodel import Listing, OrderDepth, Trade, TradingState
-from trader import Trader
+from trader2 import Trader
 
 timestamp = time.time()
 
