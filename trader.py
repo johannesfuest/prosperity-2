@@ -48,6 +48,7 @@ class Trader:
         traderData = {}
         buy_thresholds = {}
         sell_thresholds = {}
+        conversions = None
         for product in state.order_depths:
             order_depth: OrderDepth = state.order_depths[product]
             orders: List[Order] = []
@@ -71,17 +72,21 @@ class Trader:
             print(f"## Acceptable price : {acceptable_price}")
             print(f"## We buy at : {buy_thres} and sell at : {sell_thresh}")
             print(f"## Buy Order depth : {len(order_depth.buy_orders)}, Sell order depth : {len(order_depth.sell_orders)}")
-            if len(order_depth.sell_orders) != 0:
-                for ask, ask_amount in order_depth.sell_orders.items():
-                    if int(ask) <= buy_thresholds[product]:
-                        print("## BUY", str(-ask_amount) + "x", ask)
-                        orders.append(Order(product, math.floor(ask), -ask_amount))
-    
-            if len(order_depth.buy_orders) != 0:
-                for bid, bid_amount in order_depth.buy_orders.items():
-                    if int(bid) >= sell_thresholds[product]:
-                        print("## SELL", str(bid_amount) + "x", bid)
-                        orders.append(Order(product, math.ceil(bid), -bid_amount))
+            if product == "ORCHIDS":
+                orders, conversions = self.get_orchid_trades(state)
+                result[product] = orders
+            else:
+                if len(order_depth.sell_orders) != 0:
+                    for ask, ask_amount in order_depth.sell_orders.items():
+                        if int(ask) <= buy_thresholds[product]:
+                            print("## BUY", str(-ask_amount) + "x", ask)
+                            orders.append(Order(product, math.floor(ask), -ask_amount))
+        
+                if len(order_depth.buy_orders) != 0:
+                    for bid, bid_amount in order_depth.buy_orders.items():
+                        if int(bid) >= sell_thresholds[product]:
+                            print("## SELL", str(bid_amount) + "x", bid)
+                            orders.append(Order(product, math.ceil(bid), -bid_amount))
             
             result[product] = orders
             traderData[product] = generate_trader_data(state, product)
@@ -90,8 +95,72 @@ class Trader:
         result = self.adjust_to_exploit_limits(
             result, state, buy_thresholds, sell_thresholds)
         traderData = json.dumps(traderData)
-        conversions = 1
         return result, conversions, traderData
+
+    def get_orchid_trades(self, state):
+        orchid_data = state.observations.conversionObservations['ORCHIDS']
+        # get north 
+        north_best_bid, north_best_bid_amount = self.get_best_bid("ORCHIDS", state)
+        north_best_ask, north_best_ask_amount = self.get_best_ask("ORCHIDS", state)
+        # adjust for holding costs
+        north_best_ask = north_best_ask - 0.1 * north_best_ask_amount
+
+        bid_price_south = orchid_data.bidPrice
+        ask_price_south = orchid_data.askPrice
+
+        # adjust south bid and ask for transport fees
+        bid_price_south = bid_price_south - orchid_data.exportTariff - orchid_data.transportFees
+        ask_price_south = ask_price_south + orchid_data.importTariff + orchid_data.transportFees
+
+        # 
+        conversion = -self.get_position("ORCHIDS", state)
+        orders = []
+        sell_profit = (ask_price_south - north_best_bid)
+        buy_profit = (north_best_ask - bid_price_south)
+        if (buy_profit > 0) and (buy_profit > sell_profit):
+            orders.append(Order('ORCHIDS', math.floor(best_ask), self.limits['ORCHIDS'] - self.get_position("ORCHIDS", state)))
+
+        if (sell_profit > 0) and (sell_profit > buy_profit):
+            orders.append(Order('ORCHIDS', math.floor(best_bid), -self.limits['ORCHIDS'] - self.get_position("ORCHIDS", state)))
+        # if north_best_bid > ask_price_south:
+        #     orders.append(Order("ORCHIDS", north_best_bid, -north_best_bid_amount))
+
+        # if north_best_ask < bid_price_south:
+        #     orders.append(Order("ORCHIDS", north_best_ask, -north_best_ask_amount))
+        
+        # #bid and ask are inside the spread
+        # if north_best_bid < bid_price_south and north_best_ask > ask_price_south:
+        #     orders.append(Order("ORCHIDS", north_best_bid, maxToBuy), Order("ORCHIDS", north_best_ask, -maxToSell))
+
+        return orders, conversion
+
+
+    def get_position(self, product, state : TradingState):
+        return state.position.get(product, 0)    
+    
+    def get_best_bid(self, product, state: TradingState):
+        market_bids = state.order_depths[product].buy_orders
+        #best_bid = max(market_bids)
+        best_bid, best_bid_amount = list(market_bids.items())[0]
+
+        return best_bid, best_bid_amount
+
+    def get_best_ask(self, product, state: TradingState):
+        market_asks = state.order_depths[product].sell_orders
+        #best_ask = min(market_asks)
+        best_ask, best_ask_amount = list(market_asks.items())[0]
+
+        return best_ask, best_ask_amount
+    
+    def get_mid_price(self, product, state : TradingState):
+        market_bids = state.order_depths[product].buy_orders
+        market_asks = state.order_depths[product].sell_orders
+        if (len(market_bids) == 0) | (len(market_asks) == 0) | (product not in state.order_depths):
+            return None
+        
+        best_bid = max(market_bids)
+        best_ask = min(market_asks)
+        return (best_bid + best_ask)/2  
     
     def adjust_for_position_breaches(self, results, state, fill_until_position_breach=False):
         valid_orders = {}
