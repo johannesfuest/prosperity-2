@@ -41,7 +41,7 @@ class Trader:
     
     def run(self, state: TradingState):
         # Only method required. It takes all buy and sell orders for all symbols as an input, and outputs a list of orders to be sent
-        self.print_input_state(state)
+        #self.print_input_state(state)
         print("Start Evaluation:")
         print("=================\n")
         result = {}
@@ -69,9 +69,9 @@ class Trader:
             sell_thresh = int(np.ceil(acceptable_price * (1 + edge_factor_sell[product] * sell_spread)))
             buy_thresholds[product] = buy_thres
             sell_thresholds[product] = sell_thresh
-            print(f"## Acceptable price : {acceptable_price}")
-            print(f"## We buy at : {buy_thres} and sell at : {sell_thresh}")
-            print(f"## Buy Order depth : {len(order_depth.buy_orders)}, Sell order depth : {len(order_depth.sell_orders)}")
+            # print(f"## Acceptable price : {acceptable_price}")
+            # print(f"## We buy at : {buy_thres} and sell at : {sell_thresh}")
+            # print(f"## Buy Order depth : {len(order_depth.buy_orders)}, Sell order depth : {len(order_depth.sell_orders)}")
             if product == "ORCHIDS":
                 orders, conversions = self.get_orchid_trades(state)
                 result[product] = orders
@@ -107,27 +107,28 @@ class Trader:
         bid_price_south = bid_price_south - orchid_data.exportTariff - orchid_data.transportFees
         ask_price_south = ask_price_south + orchid_data.importTariff + orchid_data.transportFees
 
-        # 
+        # Ship off all previous round orchids
         conversion = abs(self.get_position("ORCHIDS", state))
         orders = []
         # positive numbers of how many we can buy and sell without hitting the limit
-        max_buy = self.limits['ORCHIDS'] - self.get_position("ORCHIDS", state)
-        max_sell = self.limits['ORCHIDS'] + self.get_position("ORCHIDS", state)
+        max_buy_capacity = self.limits['ORCHIDS'] - self.get_position("ORCHIDS", state)
+        max_sell_capacity = self.limits['ORCHIDS'] + self.get_position("ORCHIDS", state)
 
         # get north 
         north_best_bid, north_best_bid_amount = self.get_best_bid("ORCHIDS", state)
         north_best_ask, north_best_ask_amount = self.get_best_ask("ORCHIDS", state)
         # adjust for holding costs
-        north_best_ask = north_best_ask - 0.1 * north_best_ask_amount
+        #Johannes: this should be a plus, since we hold stuff we buy for a round
+        north_best_ask = north_best_ask + 0.1 * north_best_ask_amount
         
         expected_profit_dict = {}
-        if (north_best_bid > ask_price_south) & (max_sell > 0):
+        if (north_best_bid > ask_price_south) & (max_sell_capacity > 0):
             expected_profit_dict[(north_best_bid, -north_best_bid_amount)] = (north_best_bid - ask_price_south)
             # orders.append(Order("ORCHIDS", north_best_bid, -north_best_bid_amount))
             # max_sell = max_sell - north_best_bid_amount
             # max_buy = max_buy + north_best_bid_amount
 
-        if (north_best_ask < bid_price_south) & (max_buy > 0):
+        if (north_best_ask < bid_price_south) & (max_buy_capacity > 0):
             orders.append(Order("ORCHIDS", north_best_ask, north_best_ask_amount))
             expected_profit_dict[(north_best_ask, north_best_ask_amount)] = (bid_price_south - north_best_ask)
             # max_buy = max_buy - abs(north_best_ask_amount)
@@ -137,14 +138,14 @@ class Trader:
             bid, bid_amount = self.get_best_bid("ORCHIDS", state, i)
             ask, ask_amount = self.get_best_ask("ORCHIDS", state, i)
             if bid is not None:
-                if (bid > ask_price_south) & (max_sell > 0):
+                if (bid > ask_price_south) & (max_sell_capacity > 0):
                     expected_profit_dict[(bid, -bid_amount)] = (bid - ask_price_south)
                     # orders.append(Order("ORCHIDS", bid, -bid_amount))
                     # max_sell = max_sell - bid_amount
                     # max_buy = max_buy + bid_amount
             if ask is not None:
                 ask = ask - 0.1 * ask_amount
-                if (ask < bid_price_south) & (max_buy > 0):
+                if (ask < bid_price_south) & (max_buy_capacity > 0):
                     expected_profit_dict[(ask, ask_amount)] = (bid_price_south - ask)
                     # orders.append(Order("ORCHIDS", ask, ask_amount))
                     # max_buy = max_buy - abs(ask_amount)
@@ -163,33 +164,39 @@ class Trader:
             else:
                 return price_south + adjustment * 2.5
 
-        if max_sell > 0 and north_best_ask >= ask_price_south:
+        if max_sell_capacity > 0 and north_best_ask >= ask_price_south:
             difference = north_best_ask - ask_price_south
             price = calculate_price(difference, north_best_ask, ask_price_south, 1)
-            expected_profit_dict[(int(math.floor(price)), -max_sell)] = price - ask_price_south
+            expected_profit_dict[(int(math.floor(price)), -max_sell_capacity)] = price - ask_price_south
             # orders.append(Order("ORCHIDS", int(math.floor(price)), -max_sell))
 
-        if max_buy > 0 and north_best_bid <= bid_price_south:
+        if max_buy_capacity > 0 and north_best_bid <= bid_price_south:
             difference = bid_price_south - north_best_bid
             price = calculate_price(difference, north_best_bid, bid_price_south, -1)
-            expected_profit_dict[(int(math.ceil(price)), max_buy)] = bid_price_south - price
+            expected_profit_dict[(int(math.ceil(price)), max_buy_capacity)] = bid_price_south - price
             # orders.append(Order("ORCHIDS", int(math.ceil(price)), max_buy))
 
         # sort by expected profit and submit orders
         for (price, amount), exp_profit in sorted(expected_profit_dict.items(), key=lambda x: x[1], reverse=True):
-            if (exp_profit < 0) or ((max_buy <=0) and (max_sell <= 0)):
+            if (exp_profit < 0) or ((max_buy_capacity <=0) and (max_sell_capacity <= 0)):
                 break
-            if (amount > 0) and amount>max_buy:
-                amount = max_buy
-            if (amount < 0) and abs(amount)>max_sell:
-                amount = -max_sell
+            if (amount > 0) and amount>max_buy_capacity:
+                amount = max_buy_capacity
+            if (amount < 0) and abs(amount)>max_sell_capacity:
+                amount = -max_sell_capacity
             orders.append(Order("ORCHIDS", price, amount))
             if amount > 0:
-                max_buy = max_buy - amount
+                max_buy_capacity = max_buy_capacity - amount
             if amount < 0:
-                max_sell = max_sell - abs(amount)
-
-
+                max_sell_capacity = max_sell_capacity - abs(amount)
+        # add 100 orders the other way just in case they get filled
+        #If we are currently buying we want to put up 100 sell orders at points more profitable than conversion
+        # if orders[0].quantity > 0:
+        #     orders.append(Order("ORCHIDS", int(np.ceil(bid_price_south + 1)), -100))
+        # #If we are currently selling we want to put up 100 buy orders at points more profitable than conversion
+        # if orders[0].quantity < 0:
+        #     orders.append(Order("ORCHIDS", int(np.floor(ask_price_south - 1)), 100))
+        print(f'sum of order quantities for orchids is {sum([order.quantity for order in orders])}')
         return orders, conversion
 
 
@@ -202,7 +209,6 @@ class Trader:
         if len(market_bids) < (index + 1):
             return None, None
         best_bid, best_bid_amount = sorted(list(market_bids.items()))[index]
-
         return best_bid, best_bid_amount
 
     def get_best_ask(self, product, state: TradingState, index=0):
@@ -232,7 +238,10 @@ class Trader:
             buy_orders = sorted(buy_orders, key=lambda x: x.price)
             sell_orders = [order for order in orders if order.quantity < 0]
             sell_orders = sorted(sell_orders, key=lambda x: x.price, reverse=True)
-            cur_position = state.position.get(product, 0)
+            if product == 'ORCHIDS':
+                cur_position = 0
+            else:
+                cur_position = state.position.get(product, 0)
             tmp_cur_position = cur_position
             for buy_order in buy_orders:
                 if tmp_cur_position + buy_order.quantity > self.limits[product]:
