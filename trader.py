@@ -11,39 +11,19 @@ from datamodel import Order, OrderDepth, TradingState, UserId
 class Trader:
 
     def __init__(self):
+        # 1 gift basket = 6 strawberries, four chocolates and one rose
         self.limits = {
             "AMETHYSTS": 20,
             "STARFRUIT": 20,
             "ORCHIDS": 100,
+            "CHOCOLATE": 250,
+            "STRAWBERRIES": 350,
+            "ROSES": 60,
+            "GIFT_BASKET": 60,
         } 
-        
-    def print_input_state(self, state: TradingState):
-        print("\nINPUT TRADING STATE")
-        print("===================\n")
-        print(f"# TraderData: {[str(state.traderData)]}")
-        print(f"# Products: {[k for k,v in state.order_depths.items()]}")
-        for product, order_depth in state.order_depths.items():
-            print(f"## Orders for {product}")
-            for price, volume in order_depth.buy_orders.items():
-                print(f"### Buy Orders {volume}x {price}")
-            for price, volume in order_depth.sell_orders.items():
-                print(f"### Sell Orders {volume}x {price}")
-        for product, listing in state.listings.items():
-            print(f"#Listing: {listing}")
-            print(f"# Listing for {product}:")
-            #print(f"## Symbol: {listing.symbol}")
-            #print(f"## Denomination: {listing.denomination}")
-        print(f"# Own Trades: {state.own_trades}")
-        print(f"# Market Trades: {state.market_trades}")
-        print(f"# Position: {state.position}")
-        print(f"# Observations: {str(state.observations)}")
-        print("\n")
+    
     
     def run(self, state: TradingState):
-        # Only method required. It takes all buy and sell orders for all symbols as an input, and outputs a list of orders to be sent
-        #self.print_input_state(state)
-        print("Start Evaluation:")
-        print("=================\n")
         result = {}
         traderData = {}
         buy_thresholds = {}
@@ -53,25 +33,29 @@ class Trader:
             order_depth: OrderDepth = state.order_depths[product]
             orders: List[Order] = []
             acceptable_price = get_acceptable_price_for_product(state, product)
-            buy_spread = get_product_edge(state, product, "buy")
-            sell_spread = get_product_edge(state, product, "sell")
-            edge_factor_buy = {
+            product_vol = get_product_vol(state, product)
+            vol_factor_buy = {
                 "AMETHYSTS": 1,
                 "STARFRUIT": 0.25,
-                "ORCHIDS": 1000
+                "ORCHIDS": 1000,
+                "CHOCOLATE": 1000,
+                "STRAWBERRIES": 1000,
+                "ROSES": 1000,
+                "GIFT_BASKET": 1000
             }
-            edge_factor_sell = {
+            vol_factor_sell = {
                 "AMETHYSTS": 1,
                 "STARFRUIT": 0.25,
-                "ORCHIDS": 1000
+                "ORCHIDS": 1000,
+                "CHOCOLATE": 1000,
+                "STRAWBERRIES": 1000,
+                "ROSES": 1000,
+                "GIFT_BASKET": 1000
             }
-            buy_thres = int(np.floor(acceptable_price * (1 - edge_factor_buy[product] * buy_spread)))
-            sell_thresh = int(np.ceil(acceptable_price * (1 + edge_factor_sell[product] * sell_spread)))
+            buy_thres = int(np.floor(acceptable_price * (1 - vol_factor_buy[product] * product_vol)))
+            sell_thresh = int(np.ceil(acceptable_price * (1 + vol_factor_sell[product] * product_vol)))
             buy_thresholds[product] = buy_thres
             sell_thresholds[product] = sell_thresh
-            # print(f"## Acceptable price : {acceptable_price}")
-            # print(f"## We buy at : {buy_thres} and sell at : {sell_thresh}")
-            # print(f"## Buy Order depth : {len(order_depth.buy_orders)}, Sell order depth : {len(order_depth.sell_orders)}")
             if product == "ORCHIDS":
                 orders, conversions = self.get_orchid_trades(state)
                 result[product] = orders
@@ -89,12 +73,13 @@ class Trader:
                             orders.append(Order(product, math.ceil(bid), -bid_amount))
             
             result[product] = orders
-            traderData[product] = generate_trader_data(state, product)
+            traderData[product] = update_price_history(state, product)
             
         result = self.adjust_for_position_breaches(result, state, True)
         result = self.adjust_to_exploit_limits(
             result, state, buy_thresholds, sell_thresholds)
         traderData = json.dumps(traderData)
+        #TODO: add something to the trader data that allows us to check profit from conversions of orchids
         return result, conversions, traderData
 
     def get_orchid_trades(self, state):
@@ -189,13 +174,6 @@ class Trader:
                 max_buy_capacity = max_buy_capacity - amount
             if amount < 0:
                 max_sell_capacity = max_sell_capacity - abs(amount)
-        # add 100 orders the other way just in case they get filled
-        #If we are currently buying we want to put up 100 sell orders at points more profitable than conversion
-        # if orders[0].quantity > 0:
-        #     orders.append(Order("ORCHIDS", int(np.ceil(bid_price_south + 1)), -100))
-        # #If we are currently selling we want to put up 100 buy orders at points more profitable than conversion
-        # if orders[0].quantity < 0:
-        #     orders.append(Order("ORCHIDS", int(np.floor(ask_price_south - 1)), 100))
         print(f'sum of order quantities for orchids is {sum([order.quantity for order in orders])}')
         return orders, conversion
 
@@ -334,23 +312,12 @@ class Trader:
         return results
             
     
-def get_product_edge(state, product, buy_sell):
+def get_product_vol(state, product):
     price_history = get_price_history_from_state(state, product)
-    if product == "AMETHYSTS":
-        return 0.00015/2
-    elif product == "STARFRUIT":
-        if buy_sell == "buy":
-            return (np.std(price_history) / np.mean(price_history)) 
-        else:
-            return (np.std(price_history) / np.mean(price_history))
-    elif product == "ORCHIDS":
-        if buy_sell == "buy":
-            return (np.std(price_history) / np.mean(price_history))
-        else:
-            return (np.std(price_history) / np.mean(price_history))
+    return (np.std(price_history) / np.mean(price_history))
     
 
-def generate_trader_data(state, product):
+def update_price_history(state, product):
     price_history_list = get_price_history_from_state(state, product)
     price_history_list.pop(0)
     price_history_list.append(get_mid_price_from_order_book(state.order_depths, product))
@@ -361,62 +328,20 @@ def initialize_trader_data(product, length=15):
 
     match product:
         case "AMETHYSTS":
-            inital_data =  [
-                9999.0,
-                10000.0,
-                10000.0,
-                10003.5,
-                9999.0,
-                10003.5,
-                10001.0,
-                10000.0,
-                10000.0,
-                10000.0,
-                9998.5,
-                9999.0,
-                10000.0,
-                10000.0,
-                10000.0,
-            ]
+            inital_data =  [9999.0,10000.0,10000.0,10003.5,9999.0,10003.5,10001.0,10000.0,10000.0,10000.0,9998.5,9999.0,10000.0,10000.0,10000.0,]
         
         case "STARFRUIT":
-            inital_data = [
-                # end of day 0 before round 1 start
-                5053.0,
-                5053.5,
-                5052.5,
-                5053.5,
-                5053.0,
-                5053.0,
-                5052.0,
-                5051.5,
-                5052.0,
-                5051.5,
-                5052.5,
-                5051.0,
-                5053.5,
-                5049.5,
-                5051.0,
-                
-            ]
+            inital_data = [5053.0, 5053.5, 5052.5, 5053.5, 5053.0, 5053.0, 5052.0, 5051.5, 5052.0, 5051.5, 5052.5, 5051.0, 5053.5,5049.5, 5051.0,]
         case "ORCHIDS":
-            inital_data = [
-                1048.75,
-                1048.25,
-                1045.25,
-                1044.25,
-                1044.25,
-                1042.75,
-                1040.75,
-                1041.75,
-                1039.75,
-                1038.75,
-                1036.25,
-                1036.25,
-                1036.25,
-                1034.25,
-                1035.25,
-            ]
+            inital_data = [1048.75,1048.25,1045.25,1044.25,1044.25,1042.75,1040.75,1041.75,1039.75,1038.75,1036.25,1036.25,1036.25,1034.25,1035.25,]
+        case "CHOCOLATE":
+            inital_data = [7748.5, 7749.5, 7751.5, 7752.5, 7753.0, 7754.0, 7754.5, 7752.0, 7752.0, 7752.5, 7750.5, 7750.5, 7750.5, 7750.0, 7750.0]
+        case "STRAWBERRIES":
+            inital_data = [3985.5, 3985.5, 3984.5, 3985.5, 3985.5, 3985.5, 3985.5, 3984.5, 3984.5, 3984.0, 3983.5, 3983.5, 3984.5, 3984.5, 3984.5]
+        case "ROSES":
+            inital_data = [14402.0, 14406.5, 14407.5, 14406.5, 14404.5, 14404.5, 14400.0, 14397.5, 14399.5, 14405.5, 14409.5, 14408.0, 14411.5, 14412.5, 14411.5]
+        case "GIFT_BASKET":
+            inital_data = [69525.5, 69537.5, 69541.5, 69558.5, 69553.0, 69564.0, 69567.5, 69545.5, 69552.0, 69548.5, 69534.5, 69529.5, 69543.0, 69542.0, 69556.0]
     return inital_data[-length:]
     
     
@@ -425,38 +350,11 @@ def get_acceptable_price_for_product(state, product):
 
     star_fruit_coefs = np.array([
         #coeffs from round 1 submission
-        1.7044926379649041,
-        0.2920955,
-        0.20671938,
-        0.14077617,
-        0.10025522,
-        0.08580541 ,
-        0.06038695,
-        0.03888277,
-        0.00594952,
-        0.02262225,
-        0.01394354,
-        0.0164973,
-        0.00535559,
-        0.00513494,
-        0.00572899,
-        -0.00049075
-        
+        1.7044926379649041, 0.2920955, 0.20671938, 0.14077617, 0.10025522, 0.08580541 ,0.06038695, 0.03888277, 0.00594952, 0.02262225, 0.01394354, 0.0164973, 0.00535559, 0.00513494, 0.00572899, -0.00049075
         #coeffs using only day 0 to train
-        # 13.156199936551275,
-        # 0.30189398,
-        # 0.21454386,
-        # 0.13574109,
-        # 0.11238089,
-        # 0.06955258,
-        # 0.06800676,
-        # 0.05140635,
-        # 0.0071232,
-        # 0.03675125
+        # 13.156199936551275,0.30189398,0.21454386,0.13574109,0.11238089,0.06955258,0.06800676,0.05140635,0.0071232,0.03675125
         ])
-    
     price_history = get_price_history_from_state(state, product)
-
     if product == "AMETHYSTS":
         return sum(price_history) / len(price_history)
     elif product == "ORCHIDS":
@@ -464,7 +362,17 @@ def get_acceptable_price_for_product(state, product):
     elif product == "STARFRUIT":
         price_history = np.array([1.0] + list(reversed(price_history)))
         predicted_price = np.dot(star_fruit_coefs, price_history)
-    return predicted_price
+        return predicted_price
+    elif product == "CHOCOLATE":
+        return sum(price_history) / len(price_history)
+    elif product == "STRAWBERRIES":
+        return sum(price_history) / len(price_history)
+    elif product == "ROSES":
+        return sum(price_history) / len(price_history)
+    elif product == "GIFT_BASKET":
+        return sum(price_history) / len(price_history)
+    else:
+        return np.mean(price_history)
     
 
     
@@ -480,16 +388,30 @@ def get_price_history_from_state(state, product):
         return json.loads(state.traderData)[product]
 
 def split_number(n):
-    # Calculate the first part
     first = n // 6
-    
-    # Calculate the second part, approximately twice the first
     second = 2 * first
-    
-    # Calculate the third part, approximately three times the first
     third = 3 * first
-    
-    # Correct for any rounding errors by adjusting the third part
     third += n - (first + second + third)
-    
     return first, second, third
+
+def print_input_state(self, state: TradingState):
+        print("\nINPUT TRADING STATE")
+        print("===================\n")
+        print(f"# TraderData: {[str(state.traderData)]}")
+        print(f"# Products: {[k for k,v in state.order_depths.items()]}")
+        for product, order_depth in state.order_depths.items():
+            print(f"## Orders for {product}")
+            for price, volume in order_depth.buy_orders.items():
+                print(f"### Buy Orders {volume}x {price}")
+            for price, volume in order_depth.sell_orders.items():
+                print(f"### Sell Orders {volume}x {price}")
+        for product, listing in state.listings.items():
+            print(f"#Listing: {listing}")
+            print(f"# Listing for {product}:")
+            #print(f"## Symbol: {listing.symbol}")
+            #print(f"## Denomination: {listing.denomination}")
+        print(f"# Own Trades: {state.own_trades}")
+        print(f"# Market Trades: {state.market_trades}")
+        print(f"# Position: {state.position}")
+        print(f"# Observations: {str(state.observations)}")
+        print("\n")
