@@ -32,25 +32,25 @@ class Trader:
         for product in state.order_depths:
             order_depth: OrderDepth = state.order_depths[product]
             orders: List[Order] = []
-            acceptable_price = get_acceptable_price_for_product(state, product)
+            acceptable_price = self.get_acceptable_price_for_product(state, product)
             product_vol = get_product_vol(state, product)
             vol_factor_buy = {
                 "AMETHYSTS": 1,
                 "STARFRUIT": 0.25,
                 "ORCHIDS": 1000,
-                "CHOCOLATE": 1000,
-                "STRAWBERRIES": 1000,
-                "ROSES": 1000,
-                "GIFT_BASKET": 1000
+                "CHOCOLATE": 1,
+                "STRAWBERRIES": 1,
+                "ROSES": 1,
+                "GIFT_BASKET": 1,
             }
             vol_factor_sell = {
                 "AMETHYSTS": 1,
                 "STARFRUIT": 0.25,
                 "ORCHIDS": 1000,
-                "CHOCOLATE": 1000,
-                "STRAWBERRIES": 1000,
-                "ROSES": 1000,
-                "GIFT_BASKET": 1000
+                "CHOCOLATE": 1,
+                "STRAWBERRIES": 1,
+                "ROSES": 1,
+                "GIFT_BASKET": 1,
             }
             buy_thres = int(np.floor(acceptable_price * (1 - vol_factor_buy[product] * product_vol)))
             sell_thresh = int(np.ceil(acceptable_price * (1 + vol_factor_sell[product] * product_vol)))
@@ -71,14 +71,14 @@ class Trader:
                         if int(bid) >= sell_thresholds[product]:
                             print("## SELL", str(bid_amount) + "x", bid)
                             orders.append(Order(product, math.ceil(bid), -bid_amount))
-            
             result[product] = orders
             traderData[product] = update_price_history(state, product)
-            
+        
         result = self.adjust_for_position_breaches(result, state, True)
         result = self.adjust_to_exploit_limits(
             result, state, buy_thresholds, sell_thresholds)
         traderData = json.dumps(traderData)
+        
         #TODO: add something to the trader data that allows us to check profit from conversions of orchids
         return result, conversions, traderData
 
@@ -109,15 +109,10 @@ class Trader:
         expected_profit_dict = {}
         if (north_best_bid > ask_price_south) & (max_sell_capacity > 0):
             expected_profit_dict[(north_best_bid, -north_best_bid_amount)] = (north_best_bid - ask_price_south)
-            # orders.append(Order("ORCHIDS", north_best_bid, -north_best_bid_amount))
-            # max_sell = max_sell - north_best_bid_amount
-            # max_buy = max_buy + north_best_bid_amount
 
         if (north_best_ask < bid_price_south) & (max_buy_capacity > 0):
             orders.append(Order("ORCHIDS", north_best_ask, north_best_ask_amount))
             expected_profit_dict[(north_best_ask, north_best_ask_amount)] = (bid_price_south - north_best_ask)
-            # max_buy = max_buy - abs(north_best_ask_amount)
-            # max_sell = max_sell + abs(north_best_ask_amount)
 
         for i in range(1, 10):
             bid, bid_amount = self.get_best_bid("ORCHIDS", state, i)
@@ -125,17 +120,10 @@ class Trader:
             if bid is not None:
                 if (bid > ask_price_south) & (max_sell_capacity > 0):
                     expected_profit_dict[(bid, -bid_amount)] = (bid - ask_price_south)
-                    # orders.append(Order("ORCHIDS", bid, -bid_amount))
-                    # max_sell = max_sell - bid_amount
-                    # max_buy = max_buy + bid_amount
             if ask is not None:
                 ask = ask - 0.1 * ask_amount
                 if (ask < bid_price_south) & (max_buy_capacity > 0):
                     expected_profit_dict[(ask, ask_amount)] = (bid_price_south - ask)
-                    # orders.append(Order("ORCHIDS", ask, ask_amount))
-                    # max_buy = max_buy - abs(ask_amount)
-                    # max_sell = max_sell + abs(ask_amount)
-
         
         # calculate the price for orders based on the difference between the best bid/ask and the south bid/ask
         # when the difference is 1, the price is the best bid/ask
@@ -153,13 +141,11 @@ class Trader:
             difference = north_best_ask - ask_price_south
             price = calculate_price(difference, north_best_ask, ask_price_south, 1)
             expected_profit_dict[(int(math.floor(price)), -max_sell_capacity)] = price - ask_price_south
-            # orders.append(Order("ORCHIDS", int(math.floor(price)), -max_sell))
 
         if max_buy_capacity > 0 and north_best_bid <= bid_price_south:
             difference = bid_price_south - north_best_bid
             price = calculate_price(difference, north_best_bid, bid_price_south, -1)
             expected_profit_dict[(int(math.ceil(price)), max_buy_capacity)] = bid_price_south - price
-            # orders.append(Order("ORCHIDS", int(math.ceil(price)), max_buy))
 
         # sort by expected profit and submit orders
         for (price, amount), exp_profit in sorted(expected_profit_dict.items(), key=lambda x: x[1], reverse=True):
@@ -175,9 +161,52 @@ class Trader:
             if amount < 0:
                 max_sell_capacity = max_sell_capacity - abs(amount)
         print(f'sum of order quantities for orchids is {sum([order.quantity for order in orders])}')
-        return orders, conversion
+        return orders, conversion  
+    
+    def get_acceptable_price_for_product(self, state, product):
 
-
+        star_fruit_coefs = np.array([
+            #coeffs from round 1 submission
+            1.7044926379649041, 0.2920955, 0.20671938, 0.14077617, 0.10025522, 0.08580541 ,0.06038695, 0.03888277, 0.00594952, 0.02262225, 0.01394354, 0.0164973, 0.00535559, 0.00513494, 0.00572899, -0.00049075
+            #coeffs using only day 0 to train
+            # 13.156199936551275,0.30189398,0.21454386,0.13574109,0.11238089,0.06955258,0.06800676,0.05140635,0.0071232,0.03675125
+            ])
+        price_history = get_price_history_from_state(state, product)
+        hist_straw = get_price_history_from_state(state, "STRAWBERRIES")
+        hist_choc = get_price_history_from_state(state, "CHOCOLATE")
+        hist_rose = get_price_history_from_state(state, "ROSES")
+        hist_basket = get_price_history_from_state(state, "GIFT_BASKET")
+        synt_hist = [4*choc + 6*straw + rose for choc, straw, rose in zip(hist_choc, hist_straw, hist_rose)]
+        
+        avg_diff = 379.4904833333333
+        running_choc_share = np.sum(hist_choc) / (4 * np.sum(synt_hist))
+        running_straw_share = np.sum(hist_straw) / (6 * np.sum(synt_hist))
+        running_rose_share = np.sum(hist_rose) / (np.sum(synt_hist))
+        
+        choc_mid = get_mid_price_from_order_book(state.order_depths, "CHOCOLATE")
+        straw_mid = get_mid_price_from_order_book(state.order_depths, "STRAWBERRIES")
+        rose_mid = get_mid_price_from_order_book(state.order_depths, "ROSES")
+        basket_mid = get_mid_price_from_order_book(state.order_depths, "GIFT_BASKET")
+        expected_rose_mid = (basket_mid - avg_diff) * running_rose_share
+        expected_choc_mid = (basket_mid - avg_diff) * running_choc_share
+        expected_straw_mid = (basket_mid - avg_diff) * running_straw_share
+        expected_basket_mid = 4 * choc_mid + 6 * straw_mid + rose_mid + avg_diff
+        match product:
+            case "STARFRUIT":
+                price_history = np.array([1.0] + list(reversed(price_history)))
+                predicted_price = np.dot(star_fruit_coefs, price_history)
+                return predicted_price
+            case "CHOCOLATE":
+                return expected_choc_mid
+            case "STRAWBERRIES":
+                return expected_straw_mid
+            case "ROSES":
+                return expected_rose_mid
+            case "GIFT_BASKET":
+                return expected_basket_mid
+            case _:
+                return sum(price_history) / len(price_history)
+        
     def get_position(self, product, state : TradingState):
         return state.position.get(product, 0)    
     
@@ -196,17 +225,7 @@ class Trader:
             return None, None
         best_ask, best_ask_amount = sorted(list(market_asks.items()), reverse=True)[index]
 
-        return best_ask, best_ask_amount
-    
-    def get_mid_price(self, product, state : TradingState):
-        market_bids = state.order_depths[product].buy_orders
-        market_asks = state.order_depths[product].sell_orders
-        if (len(market_bids) == 0) | (len(market_asks) == 0) | (product not in state.order_depths):
-            return None
-        
-        best_bid = max(market_bids)
-        best_ask = min(market_asks)
-        return (best_bid + best_ask)/2  
+        return best_ask, best_ask_amount 
     
     def adjust_for_position_breaches(self, results, state, fill_until_position_breach=False):
         valid_orders = {}
@@ -216,6 +235,7 @@ class Trader:
             buy_orders = sorted(buy_orders, key=lambda x: x.price)
             sell_orders = [order for order in orders if order.quantity < 0]
             sell_orders = sorted(sell_orders, key=lambda x: x.price, reverse=True)
+            #TODO: add proper orchid handling
             if product == 'ORCHIDS':
                 cur_position = 0
             else:
@@ -245,7 +265,7 @@ class Trader:
     
     def adjust_to_exploit_limits(self, results, state, buy_threshold, sell_threshold):
         for product, orders, in results.items():
-            if product == "ORCHIDS":
+            if product not in ["AMETHYSTS", "STARFRUIT"]:
                 continue
             cur_position = state.position.get(product, 0)
             #initally, all orders we have sent are based on the existing book and are thus guaranteed to execute
@@ -328,10 +348,9 @@ def initialize_trader_data(product, length=15):
 
     match product:
         case "AMETHYSTS":
-            inital_data =  [9999.0,10000.0,10000.0,10003.5,9999.0,10003.5,10001.0,10000.0,10000.0,10000.0,9998.5,9999.0,10000.0,10000.0,10000.0,]
-        
+            inital_data =  [9999.0, 10000.0, 10000.0, 10003.5, 9999.0, 10003.5, 10001.0, 10000.0, 10000.0, 10000.0, 9998.5, 9999.0, 10000.0, 10000.0, 10000.0]
         case "STARFRUIT":
-            inital_data = [5053.0, 5053.5, 5052.5, 5053.5, 5053.0, 5053.0, 5052.0, 5051.5, 5052.0, 5051.5, 5052.5, 5051.0, 5053.5,5049.5, 5051.0,]
+            inital_data = [5053.0, 5053.5, 5052.5, 5053.5, 5053.0, 5053.0, 5052.0, 5051.5, 5052.0, 5051.5, 5052.5, 5051.0, 5053.5, 5049.5, 5051.0]
         case "ORCHIDS":
             inital_data = [1048.75,1048.25,1045.25,1044.25,1044.25,1042.75,1040.75,1041.75,1039.75,1038.75,1036.25,1036.25,1036.25,1034.25,1035.25,]
         case "CHOCOLATE":
@@ -343,40 +362,10 @@ def initialize_trader_data(product, length=15):
         case "GIFT_BASKET":
             inital_data = [69525.5, 69537.5, 69541.5, 69558.5, 69553.0, 69564.0, 69567.5, 69545.5, 69552.0, 69548.5, 69534.5, 69529.5, 69543.0, 69542.0, 69556.0]
     return inital_data[-length:]
-    
-    
-
-def get_acceptable_price_for_product(state, product):
-
-    star_fruit_coefs = np.array([
-        #coeffs from round 1 submission
-        1.7044926379649041, 0.2920955, 0.20671938, 0.14077617, 0.10025522, 0.08580541 ,0.06038695, 0.03888277, 0.00594952, 0.02262225, 0.01394354, 0.0164973, 0.00535559, 0.00513494, 0.00572899, -0.00049075
-        #coeffs using only day 0 to train
-        # 13.156199936551275,0.30189398,0.21454386,0.13574109,0.11238089,0.06955258,0.06800676,0.05140635,0.0071232,0.03675125
-        ])
-    price_history = get_price_history_from_state(state, product)
-    if product == "AMETHYSTS":
-        return sum(price_history) / len(price_history)
-    elif product == "ORCHIDS":
-        return sum(price_history) / len(price_history)
-    elif product == "STARFRUIT":
-        price_history = np.array([1.0] + list(reversed(price_history)))
-        predicted_price = np.dot(star_fruit_coefs, price_history)
-        return predicted_price
-    elif product == "CHOCOLATE":
-        return sum(price_history) / len(price_history)
-    elif product == "STRAWBERRIES":
-        return sum(price_history) / len(price_history)
-    elif product == "ROSES":
-        return sum(price_history) / len(price_history)
-    elif product == "GIFT_BASKET":
-        return sum(price_history) / len(price_history)
-    else:
-        return np.mean(price_history)
-    
 
     
-def get_mid_price_from_order_book(order_depth, product):    
+def get_mid_price_from_order_book(order_depth, product):  
+    #TODO: make this failsafe   
     best_bid = list(order_depth[product].buy_orders.keys())[0]
     best_ask = list(order_depth[product].sell_orders.keys())[0]
     return (best_bid + best_ask) / 2
