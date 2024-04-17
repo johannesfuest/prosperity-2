@@ -101,36 +101,10 @@ def compute_regression(params, df, lag, response="ORCHIDS"):
     ewm["all_neg"] = (ewm < 0).all(axis=1).astype(int)
     ewm["all_pos"] = (ewm > 0).all(axis=1).astype(int)
 
-    response_data = df[response].diff().iloc[1:]
-    
-    # best_alpha = ridge.alpha_
-    ridge_final = Ridge(alpha=1000)
-    # coefs: [0.03925727 0.00445401 0.00366386 0.07510591 0.        ]
-    # intercept: -0.018970904005940342
-    ridge_final.fit(ewm, response_data)
-    
-    mse_scores = -cross_val_score(ridge_final, ewm, response_data, scoring='neg_mean_squared_error', cv=5)
-    return np.mean(mse_scores)
+    ewm["export_tariff"] = df["EXPORT_TARIFF"].shift().values[1:]
+    ewm["import_tariff"] = df["IMPORT_TARIFF"].shift().values[1:]
+    ewm["transport_fees"] = df["TRANSPORT_FEES"].shift().values[1:]
 
-def compute_regression2(params, df, lag, response="ORCHIDS"):
-    # Group parameters in tuples of (span, prior_cc) for each variable across three periods
-    # param_groups = {
-    #     "SUNLIGHT": params[0:lag*3],
-    #     "HUMIDITY": params[lag*3:lag*6],
-    #     "ORCHIDS": params[lag*6:lag*9]
-    # }
-    for period in range(6):
-        for product in ["SUNLIGHT", "HUMIDITY", "ORCHIDS"]:
-            # get diff from period days ago
-            df[f"{product}_diff_{period}"] = df[product].diff(periods=period)
-    
-
-            
-
-    ewm = pd.concat(ewm_frames, axis=1).iloc[1:]
-    # all negative
-    ewm["all_neg"] = (ewm < 0).all(axis=1).astype(int)
-    ewm["all_pos"] = (ewm > 0).all(axis=1).astype(int)
 
     response_data = df[response].diff().iloc[1:]
     

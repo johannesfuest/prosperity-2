@@ -20,7 +20,8 @@ class Trader:
             "STRAWBERRIES": 350,
             "ROSES": 60,
             "GIFT_BASKET": 60,
-        } 
+        }
+        self.humidity_history = []
     
     
     def run(self, state: TradingState):
@@ -87,6 +88,7 @@ class Trader:
 
         bid_price_south = orchid_data.bidPrice
         ask_price_south = orchid_data.askPrice
+        self.humidity_history.append(orchid_data.humidity)
 
         # adjust south bid and ask for transport fees
         bid_price_south = bid_price_south - orchid_data.exportTariff - orchid_data.transportFees
@@ -107,14 +109,8 @@ class Trader:
         north_best_ask = north_best_ask + 0.1 * north_best_ask_amount
         
         expected_profit_dict = {}
-        if (north_best_bid > ask_price_south) & (max_sell_capacity > 0):
-            expected_profit_dict[(north_best_bid, -north_best_bid_amount)] = (north_best_bid - ask_price_south)
 
-        if (north_best_ask < bid_price_south) & (max_buy_capacity > 0):
-            orders.append(Order("ORCHIDS", north_best_ask, north_best_ask_amount))
-            expected_profit_dict[(north_best_ask, north_best_ask_amount)] = (bid_price_south - north_best_ask)
-
-        for i in range(1, 10):
+        for i in range(0, 10):
             bid, bid_amount = self.get_best_bid("ORCHIDS", state, i)
             ask, ask_amount = self.get_best_ask("ORCHIDS", state, i)
             if bid is not None:
@@ -124,6 +120,7 @@ class Trader:
                 ask = ask - 0.1 * ask_amount
                 if (ask < bid_price_south) & (max_buy_capacity > 0):
                     expected_profit_dict[(ask, ask_amount)] = (bid_price_south - ask)
+
         
         # calculate the price for orders based on the difference between the best bid/ask and the south bid/ask
         # when the difference is 1, the price is the best bid/ask
