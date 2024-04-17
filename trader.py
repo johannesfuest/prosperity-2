@@ -125,9 +125,6 @@ class Trader:
             if bid is not None:
                 if (bid > ask_price_south) & (max_sell_capacity > 0):
                     expected_profit_dict[(bid, -bid_amount)] = (bid - ask_price_south)
-                    # orders.append(Order("ORCHIDS", bid, -bid_amount))
-                    # max_sell = max_sell - bid_amount
-                    # max_buy = max_buy + bid_amount
             if ask is not None:
                 ask = ask - 0.1 * ask_amount
                 if (ask < bid_price_south) & (max_buy_capacity > 0):
