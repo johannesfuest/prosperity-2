@@ -36,22 +36,22 @@ class Trader:
             acceptable_price = self.get_acceptable_price_for_product(state, product)
             product_vol = get_product_vol(state, product)
             vol_factor_buy = {
-                "AMETHYSTS": 1,
-                "STARFRUIT": 0.25,
+                "AMETHYSTS": 0.5,
+                "STARFRUIT": 0.2,
                 "ORCHIDS": 1000,
-                "CHOCOLATE": 1,
-                "STRAWBERRIES": 1,
-                "ROSES": 1,
-                "GIFT_BASKET": 1,
+                "CHOCOLATE": 5,
+                "STRAWBERRIES": 5,
+                "ROSES": 5,
+                "GIFT_BASKET": 5,
             }
             vol_factor_sell = {
-                "AMETHYSTS": 1,
-                "STARFRUIT": 0.25,
+                "AMETHYSTS": 0.5,
+                "STARFRUIT": 0.2,
                 "ORCHIDS": 1000,
-                "CHOCOLATE": 1,
-                "STRAWBERRIES": 1,
-                "ROSES": 1,
-                "GIFT_BASKET": 1,
+                "CHOCOLATE": 5,
+                "STRAWBERRIES": 5,
+                "ROSES": 5,
+                "GIFT_BASKET": 5,
             }
             buy_thres = int(np.floor(acceptable_price * (1 - vol_factor_buy[product] * product_vol)))
             sell_thresh = int(np.ceil(acceptable_price * (1 + vol_factor_sell[product] * product_vol)))
@@ -64,13 +64,11 @@ class Trader:
                 if len(order_depth.sell_orders) != 0:
                     for ask, ask_amount in order_depth.sell_orders.items():
                         if int(ask) <= buy_thresholds[product]:
-                            print("## BUY", str(-ask_amount) + "x", ask)
                             orders.append(Order(product, math.floor(ask), -ask_amount))
         
                 if len(order_depth.buy_orders) != 0:
                     for bid, bid_amount in order_depth.buy_orders.items():
                         if int(bid) >= sell_thresholds[product]:
-                            print("## SELL", str(bid_amount) + "x", bid)
                             orders.append(Order(product, math.ceil(bid), -bid_amount))
             result[product] = orders
             traderData[product] = update_price_history(state, product)
@@ -84,8 +82,8 @@ class Trader:
         return result, conversions, traderData
 
     def get_orchid_trades(self, state):
+        
         orchid_data = state.observations.conversionObservations['ORCHIDS']
-
         bid_price_south = orchid_data.bidPrice
         ask_price_south = orchid_data.askPrice
         self.humidity_history.append(orchid_data.humidity)
@@ -93,9 +91,7 @@ class Trader:
         # adjust south bid and ask for transport fees
         bid_price_south = bid_price_south - orchid_data.exportTariff - orchid_data.transportFees
         ask_price_south = ask_price_south + orchid_data.importTariff + orchid_data.transportFees
-
-        # Ship off all previous round orchids
-        conversion = abs(self.get_position("ORCHIDS", state))
+        
         orders = []
         # positive numbers of how many we can buy and sell without hitting the limit
         max_buy_capacity = self.limits['ORCHIDS'] - self.get_position("ORCHIDS", state)
@@ -105,44 +101,70 @@ class Trader:
         north_best_bid, north_best_bid_amount = self.get_best_bid("ORCHIDS", state)
         north_best_ask, north_best_ask_amount = self.get_best_ask("ORCHIDS", state)
         # adjust for holding costs
-        #Johannes: this should be a plus, since we hold stuff we buy for a round
-        north_best_ask = north_best_ask + 0.1 * north_best_ask_amount
+        north_best_ask = north_best_ask + 0.1
         
         expected_profit_dict = {}
+        
+        # Ship off all previous round orchids
+        conversion = self.get_position("ORCHIDS", state)
 
-        for i in range(0, 10):
+        # check best 20 orders on either side of book and calculate expected profit of arbitrage trades
+        # if arbitrage currently not profitable, don't submit conversion
+        #TODO: rather than assuming prices will stay unchanged in the south use next day south price forecast
+        for i in range(0, 20):
             bid, bid_amount = self.get_best_bid("ORCHIDS", state, i)
             ask, ask_amount = self.get_best_ask("ORCHIDS", state, i)
+            # check whether conversion is profitable. If not use local market instead to close position from previous round
+            if bid is not None and ask is not None:
+                if bid > bid_price_south:
+                    if conversion > 0:
+                        conversion_old = conversion
+                        conversion = max(conversion - bid_amount, 0)
+                        orders.append(Order("ORCHIDS", bid, -max(conversion_old, bid_amount)))
+                        max_sell_capacity = max_sell_capacity - abs(-max(conversion_old, bid_amount))
+                if ask < ask_price_south:
+                    if conversion < 0:
+                        conversion_old = conversion
+                        conversion = min(conversion + ask_amount, 0)
+                        orders.append(Order("ORCHIDS", ask, min(conversion_old, ask_amount)))
+                        max_buy_capacity = max_buy_capacity - abs(min(conversion_old, ask_amount))
+            #arbitrage for next round         
             if bid is not None:
+                # check if can send orchids north
                 if (bid > ask_price_south) & (max_sell_capacity > 0):
-                    expected_profit_dict[(bid, -bid_amount)] = (bid - ask_price_south)
+                    expected_profit_dict[(bid, -bid_amount)] = (bid - ask_price_south) * bid_amount
+                    max_sell_capacity = max_sell_capacity - abs(bid_amount)
             if ask is not None:
-                ask = ask - 0.1 * ask_amount
+                #ask = ask + 0.1 -> have to leave this out because ask has to be an int and we already check if its smaller
+                # check if can send orchids south
                 if (ask < bid_price_south) & (max_buy_capacity > 0):
-                    expected_profit_dict[(ask, ask_amount)] = (bid_price_south - ask)
-
+                    expected_profit_dict[(ask, ask_amount)] = (bid_price_south - ask) * ask_amount
+                    max_buy_capacity = max_buy_capacity - abs(ask_amount)
+                        
+                    
+                    
+        #TODO: add trades based on domestic price predictions
         
-        # calculate the price for orders based on the difference between the best bid/ask and the south bid/ask
-        # when the difference is 1, the price is the best bid/ask
-        # when the difference is 2, the price is the best bid/ask + 1
-        # when the difference is 3, the price is the best bid/ask + 2.5
-        def calculate_price(difference, best_price, price_south, adjustment):
-            if difference <=1:
-                return best_price
-            elif difference <= 2:
-                return price_south + adjustment * 1
-            else:
-                return price_south + adjustment * 2.5
-
-        if max_sell_capacity > 0 and north_best_ask >= ask_price_south:
-            difference = north_best_ask - ask_price_south
-            price = calculate_price(difference, north_best_ask, ask_price_south, 1)
-            expected_profit_dict[(int(math.floor(price)), -max_sell_capacity)] = price - ask_price_south
-
-        if max_buy_capacity > 0 and north_best_bid <= bid_price_south:
-            difference = bid_price_south - north_best_bid
-            price = calculate_price(difference, north_best_bid, bid_price_south, -1)
-            expected_profit_dict[(int(math.ceil(price)), max_buy_capacity)] = bid_price_south - price
+        
+        #fill rest of order capacity with arbitrage trades
+        if max_buy_capacity > 0:
+            buy_thresh = bid_price_south
+            price_1 = int(np.floor(buy_thresh - 2))
+            price_2 = int(np.floor(buy_thresh - 3))
+            price_3 = int(np.floor(buy_thresh - 5))
+            quantities = split_number(max_buy_capacity)
+            expected_profit_dict[(price_1, quantities[0])] = 1
+            expected_profit_dict[(price_2, quantities[1])] = 1
+            expected_profit_dict[(price_3, quantities[2])] = 1
+        if max_sell_capacity > 0:
+            sell_thresh = ask_price_south
+            price_1 = int(np.ceil(sell_thresh + 2))
+            price_2 = int(np.ceil(sell_thresh + 3))
+            price_3 = int(np.ceil(sell_thresh + 5))
+            quantities = split_number(max_sell_capacity)
+            expected_profit_dict[(price_1, -quantities[0])] = 1
+            expected_profit_dict[(price_2, -quantities[1])] = 1
+            expected_profit_dict[(price_3, -quantities[2])] = 1
 
         # sort by expected profit and submit orders
         for (price, amount), exp_profit in sorted(expected_profit_dict.items(), key=lambda x: x[1], reverse=True):
@@ -157,8 +179,8 @@ class Trader:
                 max_buy_capacity = max_buy_capacity - amount
             if amount < 0:
                 max_sell_capacity = max_sell_capacity - abs(amount)
-        print(f'sum of order quantities for orchids is {sum([order.quantity for order in orders])}')
-        return orders, conversion  
+        conversion = abs(conversion)
+        return orders, conversion
     
     def get_acceptable_price_for_product(self, state, product):
 
@@ -232,9 +254,8 @@ class Trader:
             buy_orders = sorted(buy_orders, key=lambda x: x.price)
             sell_orders = [order for order in orders if order.quantity < 0]
             sell_orders = sorted(sell_orders, key=lambda x: x.price, reverse=True)
-            #TODO: add proper orchid handling
             if product == 'ORCHIDS':
-                cur_position = 0
+                continue
             else:
                 cur_position = state.position.get(product, 0)
             tmp_cur_position = cur_position
