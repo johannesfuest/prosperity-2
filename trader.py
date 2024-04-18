@@ -30,6 +30,7 @@ class Trader:
         buy_thresholds = {}
         sell_thresholds = {}
         conversions = None
+
         for product in state.order_depths:
             order_depth: OrderDepth = state.order_depths[product]
             orders: List[Order] = []
@@ -53,6 +54,11 @@ class Trader:
                 "ROSES": 5,
                 "GIFT_BASKET": 5,
             }
+            # threshold = {
+            #     "CHOCOLATE": 100,
+            #     "STRAWBERRIES": 100,
+            #     "ROSES": 100,
+            # }
             buy_thres = int(np.floor(acceptable_price * (1 - vol_factor_buy[product] * product_vol)))
             sell_thresh = int(np.ceil(acceptable_price * (1 + vol_factor_sell[product] * product_vol)))
             buy_thresholds[product] = buy_thres
@@ -71,6 +77,11 @@ class Trader:
                         if int(bid) >= sell_thresholds[product]:
                             orders.append(Order(product, math.ceil(bid), -bid_amount))
             result[product] = orders
+            # if product == "GIFT_BASKET":
+            #     order_dict = self.perform_etf_arb(state, order_depth, buy_thresholds, sell_thresholds)
+            #     for key, value in order_dict.items():
+            #             result[key]= value
+            
             traderData[product] = update_price_history(state, product)
         
         result = self.adjust_for_position_breaches(result, state, True)
@@ -80,6 +91,50 @@ class Trader:
         
         #TODO: add something to the trader data that allows us to check profit from conversions of orchids
         return result, conversions, traderData
+
+    def perform_etf_arb(self, state, order_depth, buy_thresholds, sell_thresholds):
+        orders = {}
+        acceptable_price_dict = {}
+        for product in ["CHOCOLATE", "STRAWBERRIES", "ROSES", "GIFT_BASKET"]:
+            acceptable_price = self.get_acceptable_price_for_product(state, product)
+            acceptable_price_dict[product] = acceptable_price
+
+        basket_action = None
+        # orders["GIFT_BASKET"] = []
+        if len(order_depth.sell_orders) != 0:
+            for ask, ask_amount in order_depth.sell_orders.items():
+                if int(ask) <= buy_thresholds["GIFT_BASKET"]:
+                    # orders["GIFT_BASKET"] .append(Order("GIFT_BASKET", math.floor(ask), -ask_amount))
+                    basket_action = "BUY"
+
+        if len(order_depth.buy_orders) != 0:
+            for bid, bid_amount in order_depth.buy_orders.items():
+                if int(bid) >= sell_thresholds["GIFT_BASKET"]:
+                    # orders["GIFT_BASKET"] .append(Order("GIFT_BASKET", math.ceil(bid), -bid_amount))
+                    basket_action = "SELL"
+
+        if basket_action is None:
+            for product in ["CHOCOLATE", "STRAWBERRIES", "ROSES"]:
+                # get rid of positions in underlying assets
+                orders[product] = []
+                mid_price = get_mid_price_from_order_book(state.order_depths, product)
+                if self.get_position(product, state) > 0:
+                    orders[product] = [Order(product, mid_price, -self.get_position(product, state))]
+                if self.get_position(product, state) < 0:
+                    orders[product] =  [Order(product, mid_price, -self.get_position(product, state))]
+        elif basket_action == "BUY":
+            for product in ["CHOCOLATE", "STRAWBERRIES", "ROSES"]:
+                mid_price = get_mid_price_from_order_book(state.order_depths, product)
+                # sell as much as you can
+                vol = self.limits[product] - self.get_position(product, state)
+                orders[product] = [Order(product, mid_price ,vol)]
+        elif basket_action == "SELL":
+            mid_price = get_mid_price_from_order_book(state.order_depths, product)
+            # buy as much as you can
+            for product in ["CHOCOLATE", "STRAWBERRIES", "ROSES"]:
+                vol = self.limits[product] + self.get_position(product, state)
+                orders[product] = [Order(product, mid_price, -vol)]
+        return orders
 
     def get_orchid_trades(self, state):
         
@@ -283,7 +338,7 @@ class Trader:
     
     def adjust_to_exploit_limits(self, results, state, buy_threshold, sell_threshold):
         for product, orders, in results.items():
-            if product not in ["AMETHYSTS", "STARFRUIT"]:
+            if product in ["ORCHIDS"]:
                 continue
             cur_position = state.position.get(product, 0)
             #initally, all orders we have sent are based on the existing book and are thus guaranteed to execute
