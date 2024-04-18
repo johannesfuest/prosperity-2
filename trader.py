@@ -25,19 +25,25 @@ class Trader:
     
     
     def run(self, state: TradingState):
+        print(f'pos gift: {self.get_position("GIFT_BASKET", state)}, pos choc: {self.get_position("CHOCOLATE", state)},pos straw: {self.get_position("STRAWBERRIES", state)}, pos rose: {self.get_position("ROSES", state)}')
         result = {}
         traderData = {}
         buy_thresholds = {}
         sell_thresholds = {}
         conversions = None
         for product in state.order_depths:
+            if product in set(['GIFT_BASKET', 'CHOCOLATE', 'STRAWBERRIES', 'ROSES']):
+                if product == "ORCHIDS":
+                    continue
+                traderData[product] = update_price_history(state, product)
+                continue
             order_depth: OrderDepth = state.order_depths[product]
             orders: List[Order] = []
             acceptable_price = self.get_acceptable_price_for_product(state, product)
             product_vol = get_product_vol(state, product)
             vol_factor_buy = {
-                "AMETHYSTS": 0.5,
-                "STARFRUIT": 0.2,
+                "AMETHYSTS": 0.25,
+                "STARFRUIT": 0.5,
                 "ORCHIDS": 1000,
                 "CHOCOLATE": 5,
                 "STRAWBERRIES": 5,
@@ -45,8 +51,8 @@ class Trader:
                 "GIFT_BASKET": 5,
             }
             vol_factor_sell = {
-                "AMETHYSTS": 0.5,
-                "STARFRUIT": 0.2,
+                "AMETHYSTS": 0.25,
+                "STARFRUIT": 0.5,
                 "ORCHIDS": 1000,
                 "CHOCOLATE": 5,
                 "STRAWBERRIES": 5,
@@ -72,14 +78,181 @@ class Trader:
                             orders.append(Order(product, math.ceil(bid), -bid_amount))
             result[product] = orders
             traderData[product] = update_price_history(state, product)
-        
+        basket_orders, choc_orders, straw_orders, rose_orders = self.get_basket_trades(state)
+        basket_quantity = self.get_position("GIFT_BASKET", state) + sum([order.quantity for order in basket_orders])
+        rose_quantity = self.get_position("ROSES", state) + sum([order.quantity for order in rose_orders])
+        straw_quantity = self.get_position("STRAWBERRIES", state) + sum([order.quantity for order in straw_orders])
+        choc_quantity = self.get_position("CHOCOLATE", state) + sum([order.quantity for order in choc_orders])
+        print(f'next gift: {basket_quantity}, next_choc: {choc_quantity}, next_straw: {straw_quantity}, next_rose: {rose_quantity}')
         result = self.adjust_for_position_breaches(result, state, True)
         result = self.adjust_to_exploit_limits(
             result, state, buy_thresholds, sell_thresholds)
+        
+        result["GIFT_BASKET"] = aggregate_orders(basket_orders, "GIFT_BASKET")
+        if state.timestamp == 15300:
+            print(f'buy orders: {state.order_depths['GIFT_BASKET'].buy_orders}')
+            print(f'basket orders: {result["GIFT_BASKET"]}')
+        
+        result["CHOCOLATE"] = aggregate_orders(choc_orders, "CHOCOLATE")
+        result["STRAWBERRIES"] = aggregate_orders(straw_orders, "STRAWBERRIES")
+        result["ROSES"] = aggregate_orders(rose_orders, "ROSES")
         traderData = json.dumps(traderData)
         
         #TODO: add something to the trader data that allows us to check profit from conversions of orchids
         return result, conversions, traderData
+    
+    def get_basket_trades(self, state):
+        avg_diff = 379.4904833333333
+        LIMIT =  55 #adapt this to trade more/less aggressively
+        choc_mid = get_mid_price_from_order_book(state.order_depths, "CHOCOLATE")
+        straw_mid = get_mid_price_from_order_book(state.order_depths, "STRAWBERRIES")
+        rose_mid = get_mid_price_from_order_book(state.order_depths, "ROSES")
+        basket_mid = get_mid_price_from_order_book(state.order_depths, "GIFT_BASKET")
+        synth_mid = 4 * choc_mid + 6 * straw_mid + rose_mid
+        curr_diff = basket_mid - synth_mid
+        buy_diff = avg_diff - LIMIT
+        sell_diff = avg_diff + LIMIT
+        gift_curr_pos = self.get_position("GIFT_BASKET", state)
+        choc_curr_pos = self.get_position("CHOCOLATE", state)
+        straw_curr_pos = self.get_position("STRAWBERRIES", state)
+        rose_curr_pos = self.get_position("ROSES", state)
+        choc_orders_ret = []
+        straw_orders_ret = []
+        rose_orders_ret = []    
+        basket_orders_ret = []
+        
+        if curr_diff < buy_diff:
+            buying_gifts = True
+            choc_orders_sold = 0
+            straw_orders_sold = 0
+            rose_orders_sold = 0
+            basket_orders_bought = 0
+            top_remaining_choc_gone = 0
+            top_remaining_straw_gone = 0
+            top_remaining_rose_gone = 0
+            top_remaining_basket_gone = 0
+        
+            while buying_gifts:
+                #buy baskets and sell components while profitable and within limits 
+                possible = True
+                if gift_curr_pos + 1 > self.limits["GIFT_BASKET"]:
+                    possible = False
+                if choc_curr_pos - 4 < -self.limits["CHOCOLATE"]:
+                    possible = False
+                if straw_curr_pos - 6 < -self.limits["STRAWBERRIES"]:
+                    possible = False
+                if rose_curr_pos - 1 < -self.limits["ROSES"]:
+                    possible = False
+                if gift_curr_pos >= 0 and state.timestamp % 1000000 > 950000:
+                    possible = False
+                if not possible:
+                    buying_gifts = False
+                    break
+                best_basket = self.get_best_ask("GIFT_BASKET", state, basket_orders_bought)
+                best_rose = self.get_best_bid("ROSES", state, rose_orders_sold)
+                choc_orders, choc_order_sold_temp, top_remaining_choc_gone, total_choc_price, choc_success =\
+                    self.get_n_best(state,"CHOCOLATE", False, choc_orders_sold, top_remaining_choc_gone, 4)
+                straw_orders, straw_orders_sold_temp, top_remaining_straw_gone, total_straw_price, straw_success =\
+                    self.get_n_best(state,"STRAWBERRIES", False, straw_orders_sold, top_remaining_straw_gone, 6)
+                if choc_success and straw_success:
+                    if (best_rose[0] is None or best_basket[0] is None):
+                        buying_gifts = False
+                        break
+                    synth_price = total_choc_price + total_straw_price + abs(best_rose[0])
+                    basket_price = abs(best_basket[0])
+                    if basket_price - synth_price < buy_diff:
+                        print(f'Basket price: {basket_price}, synth price: {synth_price}')
+                        basket_orders_ret.append(Order("GIFT_BASKET", basket_price, 1))
+                        choc_orders_ret += choc_orders
+                        straw_orders_ret += straw_orders
+                        rose_orders_ret.append(Order("ROSES", best_rose[0], -1))
+                        gift_curr_pos += 1
+                        choc_curr_pos -= 4
+                        straw_curr_pos -= 6
+                        rose_curr_pos -= 1
+                        choc_orders_sold += choc_order_sold_temp
+                        straw_orders_sold += straw_orders_sold_temp
+                        top_remaining_rose_gone += 1
+                        if top_remaining_rose_gone == abs(best_rose[1]):
+                            rose_orders_sold += 1
+                            top_remaining_rose_gone = 0
+                        top_remaining_basket_gone += 1
+                        if top_remaining_basket_gone == abs(best_basket[1]):
+                            basket_orders_bought += 1
+                            top_remaining_basket_gone = 0
+                    else:
+                        buying_gifts = False
+                        break
+                else:
+                    buying_gifts = False 
+                    break
+            return basket_orders_ret, choc_orders_ret, straw_orders_ret, rose_orders_ret
+        elif curr_diff > sell_diff:
+            selling_gifts = True
+            choc_orders_bought = 0
+            straw_orders_bought = 0
+            rose_orders_bought = 0
+            basket_orders_sold = 0
+            top_remaining_choc_gone = 0
+            top_remaining_straw_gone = 0
+            top_remaining_rose_gone = 0
+            top_remaining_basket_gone = 0
+            while selling_gifts:
+                possible = True
+                if gift_curr_pos - 1 < -self.limits["GIFT_BASKET"]:
+                    possible = False
+                if choc_curr_pos + 4 > self.limits["CHOCOLATE"]:
+                    possible = False
+                if straw_curr_pos + 6 > self.limits["STRAWBERRIES"]:
+                    possible = False
+                if rose_curr_pos + 1 > self.limits["ROSES"]:
+                    possible = False
+                #TODO: add end of day stopper to other side too
+                if gift_curr_pos <= 0 and state.timestamp % 1000000 > 950000:
+                    possible = False
+                if not possible:
+                    selling_gifts = False
+                    break
+                best_basket = self.get_best_bid("GIFT_BASKET", state, basket_orders_sold)
+    
+                best_rose = self.get_best_ask("ROSES", state, rose_orders_bought)
+                choc_orders, choc_orders_bought_temp, top_remaining_choc_gone, total_choc_price, choc_success = \
+                    self.get_n_best(state, "CHOCOLATE", True, choc_orders_bought, top_remaining_choc_gone, 4)
+                straw_orders, straw_orders_bought_temp, top_remaining_straw_gone, total_straw_price, straw_success = \
+                    self.get_n_best(state, "STRAWBERRIES", True, straw_orders_bought, top_remaining_straw_gone, 6)
+                if (choc_success and straw_success):
+                    if (best_rose[0] is None or best_basket[0] is None):
+                        selling_gifts = False
+                        break
+                    synth_price = total_choc_price + total_straw_price + abs(best_rose[0])
+                    basket_price = abs(best_basket[0])
+                    if basket_price - synth_price > sell_diff:
+                        basket_orders_ret.append(Order("GIFT_BASKET", basket_price, -1))
+                        choc_orders_ret += choc_orders
+                        straw_orders_ret += straw_orders
+                        rose_orders_ret.append(Order("ROSES", best_rose[0], 1))
+                        gift_curr_pos -= 1
+                        choc_curr_pos += 4
+                        straw_curr_pos += 6
+                        rose_curr_pos += 1
+                        choc_orders_bought += choc_orders_bought_temp
+                        straw_orders_bought += straw_orders_bought_temp
+                        top_remaining_rose_gone += 1
+                        if top_remaining_rose_gone == abs(best_rose[1]):
+                            rose_orders_bought += 1
+                            top_remaining_rose_gone = 0
+                        top_remaining_basket_gone += 1
+                        if top_remaining_basket_gone == abs(best_basket[1]):
+                            basket_orders_sold += 1
+                            top_remaining_basket_gone = 0
+                    else:
+                        selling_gifts = False
+                else:
+                    selling_gifts = False
+            return basket_orders_ret, choc_orders_ret, straw_orders_ret, rose_orders_ret
+        else:
+            return [], [], [], []
+                
 
     def get_orchid_trades(self, state):
         
@@ -234,7 +407,7 @@ class Trader:
         #best_bid = max(market_bids)
         if len(market_bids) < (index + 1):
             return None, None
-        best_bid, best_bid_amount = sorted(list(market_bids.items()))[index]
+        best_bid, best_bid_amount = sorted(list(market_bids.items()), reverse=True)[index]
         return best_bid, best_bid_amount
 
     def get_best_ask(self, product, state: TradingState, index=0):
@@ -242,8 +415,7 @@ class Trader:
         #best_ask = min(market_asks)
         if len(market_asks) < (index + 1):
             return None, None
-        best_ask, best_ask_amount = sorted(list(market_asks.items()), reverse=True)[index]
-
+        best_ask, best_ask_amount = sorted(list(market_asks.items()))[index]
         return best_ask, best_ask_amount 
     
     def adjust_for_position_breaches(self, results, state, fill_until_position_breach=False):
@@ -254,7 +426,11 @@ class Trader:
             buy_orders = sorted(buy_orders, key=lambda x: x.price)
             sell_orders = [order for order in orders if order.quantity < 0]
             sell_orders = sorted(sell_orders, key=lambda x: x.price, reverse=True)
-            if product == 'ORCHIDS':
+            if product in set(['ORCHIDS', 'GIFT_BASKET', 'CHOCOLATE', 'STRAWBERRIES', 'ROSES']):
+                #print(f'Skipping {product} for breaches')
+                if product == "ORCHIDS":
+                    valid_orders[product] = orders
+                    continue
                 continue
             else:
                 cur_position = state.position.get(product, 0)
@@ -284,6 +460,7 @@ class Trader:
     def adjust_to_exploit_limits(self, results, state, buy_threshold, sell_threshold):
         for product, orders, in results.items():
             if product not in ["AMETHYSTS", "STARFRUIT"]:
+                #print(f'Skipping {product} for limit exploitation')
                 continue
             cur_position = state.position.get(product, 0)
             #initally, all orders we have sent are based on the existing book and are thus guaranteed to execute
@@ -349,6 +526,43 @@ class Trader:
                 results[product].append(buy_order)
         return results
             
+    def get_n_best(self, state, product, buy, orders_bought, top_order_already_gone, n):
+        n_product_found = 0
+        success = False
+        order_list = []
+        orders_cleared = 0
+        best_order = None
+        while n_product_found < n:
+            #get best available remaining order on book
+            if buy:
+                best_order = self.get_best_ask(product, state, orders_bought)
+            else:
+                best_order = self.get_best_bid(product, state, orders_bought)
+            if best_order[0] is None:
+                break
+            #see how much quantity is left for us in the best remaining order
+            found_this_round = min(n - n_product_found, abs(best_order[1]) - top_order_already_gone)
+            top_order_already_gone += found_this_round
+            n_product_found += found_this_round
+            #check if we used up the whole order and need to move to the next one
+            if abs(best_order[1]) == top_order_already_gone:
+                orders_cleared += 1
+                top_order_already_gone = 0
+            # append the order
+            if buy:
+                order_list.append(Order(product, best_order[0], found_this_round))
+            else:
+                order_list.append(Order(product, best_order[0], -found_this_round))
+            # check if we have found n products and are done
+            if n_product_found == n:
+                success = True
+                break
+        if success:
+            total_price = sum([abs(order.price * abs(order.quantity)) for order in order_list])
+        else:
+            total_price = 9999999
+        return order_list, orders_cleared, top_order_already_gone, total_price, success
+    
     
 def get_product_vol(state, product):
     price_history = get_price_history_from_state(state, product)
@@ -400,6 +614,17 @@ def split_number(n):
     third = 3 * first
     third += n - (first + second + third)
     return first, second, third
+
+def aggregate_orders(orders, product):
+    result = {}
+    for order in orders:
+        if order.price not in result:
+            result[order.price] = 0
+        result[order.price] += order.quantity
+    new_orders = []
+    for price, quantity in result.items():
+        new_orders.append(Order(product, price, quantity))
+    return new_orders
 
 def print_input_state(self, state: TradingState):
         print("\nINPUT TRADING STATE")
