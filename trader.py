@@ -22,6 +22,9 @@ class Trader:
             "GIFT_BASKET": 60,
         }
         self.humidity_history = []
+        self.sunlight_history = []
+        self.orchid_price_history = []
+        self.export_tariff_history = []
     
     
     def run(self, state: TradingState):
@@ -90,8 +93,8 @@ class Trader:
         
         result["GIFT_BASKET"] = aggregate_orders(basket_orders, "GIFT_BASKET")
         if state.timestamp == 15300:
-            print(f'buy orders: {state.order_depths['GIFT_BASKET'].buy_orders}')
-            print(f'basket orders: {result["GIFT_BASKET"]}')
+            print(f"buy orders: {state.order_depths['GIFT_BASKET'].buy_orders}")
+            print(f"basket orders: {result['GIFT_BASKET']}")
         
         result["CHOCOLATE"] = aggregate_orders(choc_orders, "CHOCOLATE")
         result["STRAWBERRIES"] = aggregate_orders(straw_orders, "STRAWBERRIES")
@@ -182,6 +185,18 @@ class Trader:
                             top_remaining_basket_gone = 0
                     else:
                         buying_gifts = False
+                        # try to market make
+                        min_synth_price = basket_price + buy_diff
+                        best_rose_price = best_rose[0]
+                        best_choc_price = total_choc_price/4
+                        best_straw_price = total_straw_price/6
+                        rose_ratio = best_rose_price / min_synth_price
+                        min_rose_price = min_synth_price - 4 * best_choc_price - 6 * best_straw_price
+                        min_choc_price = (min_synth_price - 6 * best_straw_price - best_rose_price) / 4
+                        min_straw_price = (min_synth_price - 4 * best_choc_price - best_rose_price) / 6
+                        # rose_orders_ret.append(Order("ROSES", min_rose_price+3, -(self.limits["ROSES"] + rose_curr_pos)))
+                        # choc_orders_ret.append(Order("CHOCOLATE", min_choc_price+3, -(self.limits["CHOCOLATE"] + choc_curr_pos)))
+                        # straw_orders_ret.append(Order("STRAWBERRIES", min_straw_price+3, -(self.limits["STRAWBERRIES"] + straw_curr_pos)))
                         break
                 else:
                     buying_gifts = False 
@@ -251,7 +266,25 @@ class Trader:
                     selling_gifts = False
             return basket_orders_ret, choc_orders_ret, straw_orders_ret, rose_orders_ret
         else:
-            return [], [], [], []
+            best_basket = self.get_best_bid("GIFT_BASKET", state, 0)
+            choc_best_ask, choc_best_ask_amount = self.get_best_ask("CHOCOLATE", state)
+            straw_best_ask, straw_best_ask_amount = self.get_best_ask("STRAWBERRIES", state)
+            rose_best_ask, rose_best_ask_amount = self.get_best_ask("ROSES", state)
+
+            max_synth_price = abs(best_basket[0]) - sell_diff
+
+            max_rose_price = max_synth_price - 4 * choc_best_ask - 6 * straw_best_ask
+            max_choc_price = (max_synth_price - 6 * straw_best_ask - rose_best_ask) / 4
+            max_straw_price = (max_synth_price - 4 * choc_best_ask - rose_best_ask) / 6
+
+            # tried market making. but didn't add anything
+            # rose_orders_ret.append(Order("ROSES", max_rose_price, 1))
+            # choc_orders_ret.append(Order("CHOCOLATE", max_choc_price, 1))
+            # straw_orders_ret.append(Order("STRAWBERRIES", max_straw_price, 1))
+
+
+            
+            return basket_orders_ret, choc_orders_ret, straw_orders_ret, rose_orders_ret
                 
 
     def get_orchid_trades(self, state):
@@ -259,7 +292,7 @@ class Trader:
         orchid_data = state.observations.conversionObservations['ORCHIDS']
         bid_price_south = orchid_data.bidPrice
         ask_price_south = orchid_data.askPrice
-        self.humidity_history.append(orchid_data.humidity)
+        mid_price_south = (bid_price_south + ask_price_south) / 2
 
         # adjust south bid and ask for transport fees
         bid_price_south = bid_price_south - orchid_data.exportTariff - orchid_data.transportFees
@@ -317,10 +350,36 @@ class Trader:
                     
                     
         #TODO: add trades based on domestic price predictions
+        def get_last_entry(lst):
+            if len(lst) == 0:
+                return -1
+            return lst[-1]
+
+        buy_orchids = False
+        sell_orchids = False
+        if len(self.sunlight_history)>0 and (orchid_data.sunlight - self.sunlight_history[-1] > 1):
+            buy_orchids = True
+        if len(self.sunlight_history)>0 and (orchid_data.sunlight - self.sunlight_history[-1] < -1) and (orchid_data.sunlight - self.sunlight_history[-1] > -2):
+            sell_orchids = True
+        if len(self.humidity_history)>0 and (orchid_data.humidity - self.humidity_history[-1] < -0.01):
+            sell_orchids = True
+        if len(self.export_tariff_history)>0 and (orchid_data.exportTariff - self.export_tariff_history[-1] >= 1):
+            buy_orchids = True
+        if len(self.export_tariff_history)>0 and (orchid_data.exportTariff - self.export_tariff_history[-1] <= -1):
+            sell_orchids = True
+        if buy_orchids:
+            if max_buy_capacity > 0:
+                orders.append(Order("ORCHIDS", int(np.floor(bid_price_south-1)), max_buy_capacity))
+                max_buy_capacity = 0
+        if sell_orchids:
+            if max_sell_capacity > 0:
+                orders.append(Order("ORCHIDS", int(np.ceil((ask_price_south+1))), -max_sell_capacity))
+                max_sell_capacity = 0
+
         
         
         #fill rest of order capacity with arbitrage trades
-        if max_buy_capacity > 0:
+        if (max_buy_capacity > 0):
             buy_thresh = bid_price_south
             price_1 = int(np.floor(buy_thresh - 2))
             price_2 = int(np.floor(buy_thresh - 3))
@@ -329,7 +388,7 @@ class Trader:
             expected_profit_dict[(price_1, quantities[0])] = 1
             expected_profit_dict[(price_2, quantities[1])] = 1
             expected_profit_dict[(price_3, quantities[2])] = 1
-        if max_sell_capacity > 0:
+        if (max_sell_capacity > 0):
             sell_thresh = ask_price_south
             price_1 = int(np.ceil(sell_thresh + 2))
             price_2 = int(np.ceil(sell_thresh + 3))
@@ -353,6 +412,10 @@ class Trader:
             if amount < 0:
                 max_sell_capacity = max_sell_capacity - abs(amount)
         conversion = abs(conversion)
+        self.humidity_history.append(orchid_data.humidity)
+        self.sunlight_history.append(orchid_data.sunlight)
+        self.orchid_price_history.append(mid_price_south)
+        self.export_tariff_history.append(orchid_data.exportTariff)
         return orders, conversion
     
     def get_acceptable_price_for_product(self, state, product):
