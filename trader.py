@@ -77,6 +77,88 @@ class Trader:
         traderData = json.dumps(traderData)
         return result, conversions, traderData
 
+    def norm_cdf(x):
+        return 0.5 * (1 + np.erf(x / np.sqrt(2)))
+
+    def black_scholes(S, K, T, r, sigma, option_type='call'):
+        """
+        Calculate European option price using the Black-Scholes formula,
+        without using scipy.stats.norm.cdf, using numpy for computation instead.
+
+        Parameters:
+            S (float): Current price of the underlying asset.
+            K (float): Strike price of the option.
+            T (float): Time to expiration in years.
+            r (float): Risk-free interest rate (annual).
+            sigma (float): Volatility of the underlying asset (annual).
+            option_type (str): Type of option ('call' or 'put').
+
+        Returns:
+            float: Price of the option.
+        """
+        d1 = (np.log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
+        d2 = d1 - sigma * np.sqrt(T)
+
+        if option_type == 'call':
+            price = S * norm_cdf(d1) - K * np.exp(-r * T) * norm_cdf(d2)
+        else:
+            price = K * np.exp(-r * T) * norm_cdf(-d2) - S * norm_cdf(-d1)
+
+        return price
+    
+    def bisection_method(f, a, b, tol=1e-6, max_iter=1000):
+        """
+        Find the root of a function using the Bisection method.
+
+        Parameters:
+            f (function): The function for which to find the root.
+            a (float): Start of the interval.
+            b (float): End of the interval.
+            tol (float): Tolerance for stopping criterion.
+            max_iter (int): Maximum number of iterations.
+
+        Returns:
+            float: Approximate root of the function.
+        """
+        if f(a) * f(b) >= 0:
+            raise ValueError("f(a) and f(b) must have opposite signs")
+
+        for n in range(max_iter):
+            c = (a + b) / 2
+            fc = f(c)
+            
+            if abs(fc) < tol:
+                print(f"Found solution after {n} iterations.")
+                return c
+            elif f(a) * fc < 0:
+                b = c
+            else:
+                a = c
+
+        raise RuntimeError("Exceeded maximum iterations. No solution found.")
+
+    
+    def get_implied_coconut_price(option_price, K, T, r, sigma, option_type='call'):
+        """
+        Calculate the implied price of a coconut (underlying) using the Black-Scholes formula and the current option price.
+        We assume fixed implied volatility and solve for the coconut price.
+
+        Parameters:
+            option_price (float): Price of the option.
+            K (float): Strike price of the option.
+            T (float): Time to expiration in years.
+            r (float): Risk-free interest rate (annual).
+            sigma (float): Volatility of the underlying asset (annual).
+            option_type (str): Type of option ('call' or 'put').
+
+        Returns:
+            float: Implied price of a coconut.
+        """
+        def f(S):
+            return black_scholes(S, K, T, r, sigma, option_type) - option_price
+
+        interval = (9000, 11000)
+        return bisection_method(f, *interval)
         
         
     
