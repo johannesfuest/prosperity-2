@@ -66,11 +66,12 @@ class Trader:
         orders, conversions = self.get_orchid_trades(state)
         result["ORCHIDS"] = orders
         basket_orders, choc_orders, straw_orders, rose_orders = self.get_basket_trades(state)
-        result["GIFT_BASKET"] = aggregate_orders(basket_orders, "GIFT_BASKET")
-        result["CHOCOLATE"] = aggregate_orders(choc_orders, "CHOCOLATE")
-        result["STRAWBERRIES"] = aggregate_orders(straw_orders, "STRAWBERRIES")
-        result["ROSES"] = aggregate_orders(rose_orders, "ROSES")
+        result["GIFT_BASKET"] = basket_orders
+        result["CHOCOLATE"] = choc_orders
+        result["STRAWBERRIES"] = straw_orders
+        result["ROSES"] = rose_orders
         #TODO: add coconut and coconut coupon trades
+        
         traderData = json.dumps(traderData)
         return result, conversions, traderData
     
@@ -638,17 +639,6 @@ def split_number(n):
     third = 3 * first
     third += n - (first + second + third)
     return first, second, third
-
-def aggregate_orders(orders, product):
-    result = {}
-    for order in orders:
-        if order.price not in result:
-            result[order.price] = 0
-        result[order.price] += order.quantity
-    new_orders = []
-    for price, quantity in result.items():
-        new_orders.append(Order(product, price, quantity))
-    return new_orders
 
 def print_input_state(self, state: TradingState):
         print("\nINPUT TRADING STATE")
