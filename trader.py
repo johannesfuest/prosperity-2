@@ -11,7 +11,6 @@ from datamodel import Order, OrderDepth, TradingState, UserId
 class Trader:
 
     def __init__(self):
-        # 1 gift basket = 6 strawberries, four chocolates and one rose
         self.limits = {
             "AMETHYSTS": 20,
             "STARFRUIT": 20,
@@ -20,6 +19,8 @@ class Trader:
             "STRAWBERRIES": 350,
             "ROSES": 60,
             "GIFT_BASKET": 60,
+            "COCONUT": 300,
+            "COCONUT_COUPON": 600 
         }
         self.humidity_history = []
         self.sunlight_history = []
@@ -28,18 +29,12 @@ class Trader:
     
     
     def run(self, state: TradingState):
-        print(f'pos gift: {self.get_position("GIFT_BASKET", state)}, pos choc: {self.get_position("CHOCOLATE", state)},pos straw: {self.get_position("STRAWBERRIES", state)}, pos rose: {self.get_position("ROSES", state)}')
         result = {}
         traderData = {}
         buy_thresholds = {}
         sell_thresholds = {}
         conversions = None
-        for product in state.order_depths:
-            if product in set(['GIFT_BASKET', 'CHOCOLATE', 'STRAWBERRIES', 'ROSES']):
-                if product == "ORCHIDS":
-                    continue
-                traderData[product] = update_price_history(state, product)
-                continue
+        for product in ['AMETHYSTS', 'STARFRUIT']:
             order_depth: OrderDepth = state.order_depths[product]
             orders: List[Order] = []
             acceptable_price = self.get_acceptable_price_for_product(state, product)
@@ -47,61 +42,36 @@ class Trader:
             vol_factor_buy = {
                 "AMETHYSTS": 0.25,
                 "STARFRUIT": 0.5,
-                "ORCHIDS": 1000,
-                "CHOCOLATE": 5,
-                "STRAWBERRIES": 5,
-                "ROSES": 5,
-                "GIFT_BASKET": 5,
             }
             vol_factor_sell = {
                 "AMETHYSTS": 0.25,
                 "STARFRUIT": 0.5,
-                "ORCHIDS": 1000,
-                "CHOCOLATE": 5,
-                "STRAWBERRIES": 5,
-                "ROSES": 5,
-                "GIFT_BASKET": 5,
             }
             buy_thres = int(np.floor(acceptable_price * (1 - vol_factor_buy[product] * product_vol)))
             sell_thresh = int(np.ceil(acceptable_price * (1 + vol_factor_sell[product] * product_vol)))
             buy_thresholds[product] = buy_thres
             sell_thresholds[product] = sell_thresh
-            if product == "ORCHIDS":
-                orders, conversions = self.get_orchid_trades(state)
-                result[product] = orders
-            else:
-                if len(order_depth.sell_orders) != 0:
-                    for ask, ask_amount in order_depth.sell_orders.items():
-                        if int(ask) <= buy_thresholds[product]:
-                            orders.append(Order(product, math.floor(ask), -ask_amount))
-        
-                if len(order_depth.buy_orders) != 0:
-                    for bid, bid_amount in order_depth.buy_orders.items():
-                        if int(bid) >= sell_thresholds[product]:
-                            orders.append(Order(product, math.ceil(bid), -bid_amount))
+            if len(order_depth.sell_orders) != 0:
+                for ask, ask_amount in order_depth.sell_orders.items():
+                    if int(ask) <= buy_thresholds[product]:
+                        orders.append(Order(product, math.floor(ask), -ask_amount))
+            if len(order_depth.buy_orders) != 0:
+                for bid, bid_amount in order_depth.buy_orders.items():
+                    if int(bid) >= sell_thresholds[product]:
+                        orders.append(Order(product, math.ceil(bid), -bid_amount))
             result[product] = orders
             traderData[product] = update_price_history(state, product)
-        basket_orders, choc_orders, straw_orders, rose_orders = self.get_basket_trades(state)
-        basket_quantity = self.get_position("GIFT_BASKET", state) + sum([order.quantity for order in basket_orders])
-        rose_quantity = self.get_position("ROSES", state) + sum([order.quantity for order in rose_orders])
-        straw_quantity = self.get_position("STRAWBERRIES", state) + sum([order.quantity for order in straw_orders])
-        choc_quantity = self.get_position("CHOCOLATE", state) + sum([order.quantity for order in choc_orders])
-        print(f'next gift: {basket_quantity}, next_choc: {choc_quantity}, next_straw: {straw_quantity}, next_rose: {rose_quantity}')
         result = self.adjust_for_position_breaches(result, state, True)
-        result = self.adjust_to_exploit_limits(
-            result, state, buy_thresholds, sell_thresholds)
-        
+        result = self.adjust_to_exploit_limits(result, state, buy_thresholds, sell_thresholds)
+        orders, conversions = self.get_orchid_trades(state)
+        result["ORCHIDS"] = orders
+        basket_orders, choc_orders, straw_orders, rose_orders = self.get_basket_trades(state)
         result["GIFT_BASKET"] = aggregate_orders(basket_orders, "GIFT_BASKET")
-        if state.timestamp == 15300:
-            print(f"buy orders: {state.order_depths['GIFT_BASKET'].buy_orders}")
-            print(f"basket orders: {result['GIFT_BASKET']}")
-        
         result["CHOCOLATE"] = aggregate_orders(choc_orders, "CHOCOLATE")
         result["STRAWBERRIES"] = aggregate_orders(straw_orders, "STRAWBERRIES")
         result["ROSES"] = aggregate_orders(rose_orders, "ROSES")
+        #TODO: add coconut and coconut coupon trades
         traderData = json.dumps(traderData)
-        
-        #TODO: add something to the trader data that allows us to check profit from conversions of orchids
         return result, conversions, traderData
     
     def get_basket_trades(self, state):
@@ -164,7 +134,6 @@ class Trader:
                     synth_price = total_choc_price + total_straw_price + abs(best_rose[0])
                     basket_price = abs(best_basket[0])
                     if basket_price - synth_price < buy_diff:
-                        print(f'Basket price: {basket_price}, synth price: {synth_price}')
                         basket_orders_ret.append(Order("GIFT_BASKET", basket_price, 1))
                         choc_orders_ret += choc_orders
                         straw_orders_ret += straw_orders
@@ -489,14 +458,7 @@ class Trader:
             buy_orders = sorted(buy_orders, key=lambda x: x.price)
             sell_orders = [order for order in orders if order.quantity < 0]
             sell_orders = sorted(sell_orders, key=lambda x: x.price, reverse=True)
-            if product in set(['ORCHIDS', 'GIFT_BASKET', 'CHOCOLATE', 'STRAWBERRIES', 'ROSES']):
-                #print(f'Skipping {product} for breaches')
-                if product == "ORCHIDS":
-                    valid_orders[product] = orders
-                    continue
-                continue
-            else:
-                cur_position = state.position.get(product, 0)
+            cur_position = state.position.get(product, 0)
             tmp_cur_position = cur_position
             for buy_order in buy_orders:
                 if tmp_cur_position + buy_order.quantity > self.limits[product]:
@@ -523,7 +485,6 @@ class Trader:
     def adjust_to_exploit_limits(self, results, state, buy_threshold, sell_threshold):
         for product, orders, in results.items():
             if product not in ["AMETHYSTS", "STARFRUIT"]:
-                #print(f'Skipping {product} for limit exploitation')
                 continue
             cur_position = state.position.get(product, 0)
             #initally, all orders we have sent are based on the existing book and are thus guaranteed to execute
