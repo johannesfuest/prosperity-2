@@ -75,6 +75,78 @@ class Trader:
         traderData = json.dumps(traderData)
         return result, conversions, traderData
     
+    def get_coconut_trades(self, state):
+        #TODO: get these prices from Black Scholes model
+        LIMIT = 5
+        prices = {
+            "COCONUT": 100,
+            "COCONUT_COUPON": 50
+        }
+        coconut_position = self.get_position("COCONUT", state)
+        coconut_coupon_position = self.get_position("COCONUT_COUPON", state)
+        
+        positions = {
+            "COCONUT": coconut_position,
+            "COCONUT_COUPON": coconut_coupon_position
+        }
+        result = {}
+        for product in ['COCONUT', 'COCONUT_COUPON']:
+            best_bid, _ = self.get_best_bid(product, state)
+            best_ask, _ = self.get_best_ask(product, state)
+            orders = []
+        
+            #buy the product
+            orders_bought = 0
+            while True:
+                next_best_bid = self.get_best_bid(product, state, orders_bought)
+                if next_best_bid[0] is None:
+                    break
+                else:
+                    if best_ask < (prices[product] - LIMIT):
+                        capacity = self.limits[product] - positions[product]
+                        if capacity > 0:
+                            orders.append(Order(product, next_best_bid[0], min(next_best_bid[1], capacity)))
+                            positions[product] += min(next_best_bid[1], capacity)
+                            if min(next_best_bid[1], capacity) == next_best_bid[1]:
+                                orders_bought += 1
+                        else:
+                            break
+                    else:
+                        break
+            #sell the product
+            orders_sold = 0
+            while True:
+                next_best_ask = self.get_best_ask(product, state, orders_sold)
+                if next_best_ask[0] is None:
+                    break
+                else:
+                    if best_bid > (prices[product] + LIMIT):
+                        capacity = -self.limits[product] - positions[product]
+                        if capacity < 0:
+                            orders.append(Order(product, next_best_ask[0], max(next_best_ask[1], capacity)))
+                            positions[product] += max(next_best_ask[1], capacity)
+                            if max(next_best_ask[1], capacity) == next_best_ask[1]:
+                                orders_sold += 1
+                        else:
+                            break
+                    else:
+                        break
+            buy_capacity = self.limits[product] - positions[product]
+            sell_capacity = -self.limits[product] - positions[product]
+            
+            if buy_capacity > 0:
+                levels = split_number(buy_capacity)
+                for i, level in enumerate(levels):
+                    orders.append(Order(product, prices[product] + LIMIT + 1 + i, level))
+            if sell_capacity < 0:
+                levels = split_number(-sell_capacity)
+                for i, level in enumerate(levels):
+                    orders.append(Order(product, prices[product] - LIMIT - 1 - i, -level))
+            result[product] = orders
+        return result
+                
+                
+    
     def get_basket_trades(self, state):
         avg_diff = 379.4904833333333
         LIMIT =  55 #adapt this to trade more/less aggressively
@@ -254,8 +326,7 @@ class Trader:
 
 
             
-            return basket_orders_ret, choc_orders_ret, straw_orders_ret, rose_orders_ret
-                
+            return basket_orders_ret, choc_orders_ret, straw_orders_ret, rose_orders_ret  
 
     def get_orchid_trades(self, state):
         
