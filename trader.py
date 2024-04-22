@@ -164,8 +164,8 @@ class Trader:
     
     def get_coconut_trades(self, state):
         thresholds = {
-            "COCONUT": 25,
-            "COCONUT_COUPON": 15
+            "COCONUT": 45,
+            "COCONUT_COUPON": 7
         }
         option_price = get_mid_price_from_order_book(state.order_depths, "COCONUT_COUPON")
         implied_coconut_price = get_implied_coconut_price(option_price, 10000, 250/365, 0, 0.19226514699995814)
