@@ -82,8 +82,8 @@ class Trader:
     
     def get_coconut_trades(self, state):
         thresholds = {
-            "COCONUT": 10,
-            "COCONUT_COUPON": 10
+            "COCONUT": 25,
+            "COCONUT_COUPON": 15
         }
         option_price = get_mid_price_from_order_book(state.order_depths, "COCONUT_COUPON")
         implied_coconut_price = get_implied_coconut_price(option_price, 10000, 250/365, 0, 0.19226514699995814)
@@ -153,9 +153,11 @@ class Trader:
             if buy_capacity > 0:
                 levels = split_number(buy_capacity)
                 for i, level in enumerate(levels):
+                    # delta = 5 if product == 'COCONUT' else 1
                     orders.append(Order(product, math.floor(prices[product] - thresholds[product] - 1 - i), level))
             if sell_capacity < 0:
                 levels = split_number(-sell_capacity)
+                # delta = 5 if product == 'COCONUT' else 1
                 for i, level in enumerate(levels):
                     orders.append(Order(product, math.ceil(prices[product] + thresholds[product] + 1 + i), -level))
             result[product] = orders
@@ -685,6 +687,10 @@ def initialize_trader_data(product, length=15):
     
 def get_mid_price_from_order_book(order_depth, product):  
     #TODO: make this failsafe   
+    if len(order_depth[product].buy_orders) == 0:
+        return list(order_depth[product].sell_orders.keys())[0]
+    if len(order_depth[product].sell_orders) == 0:
+        return list(order_depth[product].buy_orders.keys())[0]
     best_bid = list(order_depth[product].buy_orders.keys())[0]
     best_ask = list(order_depth[product].sell_orders.keys())[0]
     return (best_bid + best_ask) / 2
