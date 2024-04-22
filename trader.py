@@ -71,128 +71,59 @@ class Trader:
         result["STRAWBERRIES"] = straw_orders
         result["ROSES"] = rose_orders
         #TODO: add coconut and coconut coupon trades
-        
+        res_temp = self.get_coconut_trades(state)
+        result["COCONUT"] = res_temp["COCONUT"]
+        result["COCONUT_COUPON"] = res_temp["COCONUT_COUPON"]
         traderData = json.dumps(traderData)
         return result, conversions, traderData
 
-    def norm_cdf(x):
-        return 0.5 * (1 + np.erf(x / np.sqrt(2)))
-
-    def black_scholes(S, K, T, r, sigma, option_type='call'):
-        """
-        Calculate European option price using the Black-Scholes formula,
-        without using scipy.stats.norm.cdf, using numpy for computation instead.
-
-        Parameters:
-            S (float): Current price of the underlying asset.
-            K (float): Strike price of the option.
-            T (float): Time to expiration in years.
-            r (float): Risk-free interest rate (annual).
-            sigma (float): Volatility of the underlying asset (annual).
-            option_type (str): Type of option ('call' or 'put').
-
-        Returns:
-            float: Price of the option.
-        """
-        d1 = (np.log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
-        d2 = d1 - sigma * np.sqrt(T)
-
-        if option_type == 'call':
-            price = S * norm_cdf(d1) - K * np.exp(-r * T) * norm_cdf(d2)
-        else:
-            price = K * np.exp(-r * T) * norm_cdf(-d2) - S * norm_cdf(-d1)
-
-        return price
-    
-    def bisection_method(f, a, b, tol=1e-6, max_iter=1000):
-        """
-        Find the root of a function using the Bisection method.
-
-        Parameters:
-            f (function): The function for which to find the root.
-            a (float): Start of the interval.
-            b (float): End of the interval.
-            tol (float): Tolerance for stopping criterion.
-            max_iter (int): Maximum number of iterations.
-
-        Returns:
-            float: Approximate root of the function.
-        """
-        if f(a) * f(b) >= 0:
-            raise ValueError("f(a) and f(b) must have opposite signs")
-
-        for n in range(max_iter):
-            c = (a + b) / 2
-            fc = f(c)
-            
-            if abs(fc) < tol:
-                print(f"Found solution after {n} iterations.")
-                return c
-            elif f(a) * fc < 0:
-                b = c
-            else:
-                a = c
-
-        raise RuntimeError("Exceeded maximum iterations. No solution found.")
-
-    
-    def get_implied_coconut_price(option_price, K, T, r, sigma, option_type='call'):
-        """
-        Calculate the implied price of a coconut (underlying) using the Black-Scholes formula and the current option price.
-        We assume fixed implied volatility and solve for the coconut price.
-
-        Parameters:
-            option_price (float): Price of the option.
-            K (float): Strike price of the option.
-            T (float): Time to expiration in years.
-            r (float): Risk-free interest rate (annual).
-            sigma (float): Volatility of the underlying asset (annual).
-            option_type (str): Type of option ('call' or 'put').
-
-        Returns:
-            float: Implied price of a coconut.
-        """
-        def f(S):
-            return black_scholes(S, K, T, r, sigma, option_type) - option_price
-
-        interval = (9000, 11000)
-        return bisection_method(f, *interval)
         
         
     
     def get_coconut_trades(self, state):
-        #TODO: get these prices from Black Scholes model
-        LIMIT = 5
+        thresholds = {
+            "COCONUT": 10,
+            "COCONUT_COUPON": 10
+        }
+        option_price = get_mid_price_from_order_book(state.order_depths, "COCONUT_COUPON")
+        implied_coconut_price = get_implied_coconut_price(option_price, 10000, 250/365, 0, 0.19226514699995814)
+        coconut_mid_price = get_mid_price_from_order_book(state.order_depths, "COCONUT")
         prices = {
-            "COCONUT": 100,
-            "COCONUT_COUPON": 50
+            "COCONUT": implied_coconut_price,
+            "COCONUT_COUPON": black_scholes(coconut_mid_price, 10000, 250/365, 0, 0.19226514699995814)
         }
         coconut_position = self.get_position("COCONUT", state)
         coconut_coupon_position = self.get_position("COCONUT_COUPON", state)
         
-        positions = {
+        buy_positions = {
             "COCONUT": coconut_position,
             "COCONUT_COUPON": coconut_coupon_position
         }
+        sell_positions = {
+            "COCONUT": coconut_position,
+            "COCONUT_COUPON": coconut_coupon_position
+        }
+        print(f'Calced prices: {prices}')
+        print(f'Current order book: {state.order_depths["COCONUT"].buy_orders}')
+        print(f'{state.order_depths["COCONUT"].sell_orders}')
+        print(f'{state.order_depths["COCONUT_COUPON"].buy_orders}')
+        print(f'{state.order_depths["COCONUT_COUPON"].sell_orders}')
         result = {}
         for product in ['COCONUT', 'COCONUT_COUPON']:
-            best_bid, _ = self.get_best_bid(product, state)
-            best_ask, _ = self.get_best_ask(product, state)
             orders = []
-        
             #buy the product
             orders_bought = 0
             while True:
-                next_best_bid = self.get_best_bid(product, state, orders_bought)
-                if next_best_bid[0] is None:
+                next_best_ask = self.get_best_ask(product, state, orders_bought)
+                if next_best_ask[0] is None:
                     break
                 else:
-                    if best_ask < (prices[product] - LIMIT):
-                        capacity = self.limits[product] - positions[product]
+                    if next_best_ask[0] < (prices[product] - thresholds[product]):
+                        capacity = self.limits[product] - buy_positions[product]
                         if capacity > 0:
-                            orders.append(Order(product, next_best_bid[0], min(next_best_bid[1], capacity)))
-                            positions[product] += min(next_best_bid[1], capacity)
-                            if min(next_best_bid[1], capacity) == next_best_bid[1]:
+                            orders.append(Order(product, next_best_ask[0], min(-next_best_ask[1], capacity)))
+                            buy_positions[product] += min(-next_best_ask[1], capacity)
+                            if min(-next_best_ask[1], capacity) == -next_best_ask[1]:
                                 orders_bought += 1
                         else:
                             break
@@ -201,33 +132,34 @@ class Trader:
             #sell the product
             orders_sold = 0
             while True:
-                next_best_ask = self.get_best_ask(product, state, orders_sold)
-                if next_best_ask[0] is None:
+                next_best_bid = self.get_best_bid(product, state, orders_sold)
+                if next_best_bid[0] is None:
                     break
                 else:
-                    if best_bid > (prices[product] + LIMIT):
-                        capacity = -self.limits[product] - positions[product]
+                    if next_best_bid[0] > (prices[product] + thresholds[product]):
+                        capacity = -self.limits[product] - sell_positions[product]
                         if capacity < 0:
-                            orders.append(Order(product, next_best_ask[0], max(next_best_ask[1], capacity)))
-                            positions[product] += max(next_best_ask[1], capacity)
-                            if max(next_best_ask[1], capacity) == next_best_ask[1]:
+                            orders.append(Order(product, next_best_bid[0], max(-next_best_bid[1], capacity)))
+                            sell_positions[product] += max(-next_best_bid[1], capacity)
+                            if max(-next_best_bid[1], capacity) == -next_best_bid[1]:
                                 orders_sold += 1
                         else:
                             break
                     else:
                         break
-            buy_capacity = self.limits[product] - positions[product]
-            sell_capacity = -self.limits[product] - positions[product]
+            buy_capacity = self.limits[product] - buy_positions[product]
+            sell_capacity = -self.limits[product] - sell_positions[product]
             
             if buy_capacity > 0:
                 levels = split_number(buy_capacity)
                 for i, level in enumerate(levels):
-                    orders.append(Order(product, prices[product] + LIMIT + 1 + i, level))
+                    orders.append(Order(product, math.floor(prices[product] - thresholds[product] - 1 - i), level))
             if sell_capacity < 0:
                 levels = split_number(-sell_capacity)
                 for i, level in enumerate(levels):
-                    orders.append(Order(product, prices[product] - LIMIT - 1 - i, -level))
+                    orders.append(Order(product, math.ceil(prices[product] + thresholds[product] + 1 + i), -level))
             result[product] = orders
+        print(f'Generated orders: {result}')
         return result
                 
                 
@@ -553,38 +485,12 @@ class Trader:
             # 13.156199936551275,0.30189398,0.21454386,0.13574109,0.11238089,0.06955258,0.06800676,0.05140635,0.0071232,0.03675125
             ])
         price_history = get_price_history_from_state(state, product)
-        hist_straw = get_price_history_from_state(state, "STRAWBERRIES")
-        hist_choc = get_price_history_from_state(state, "CHOCOLATE")
-        hist_rose = get_price_history_from_state(state, "ROSES")
-        hist_basket = get_price_history_from_state(state, "GIFT_BASKET")
-        synt_hist = [4*choc + 6*straw + rose for choc, straw, rose in zip(hist_choc, hist_straw, hist_rose)]
         
-        avg_diff = 379.4904833333333
-        running_choc_share = np.sum(hist_choc) / (4 * np.sum(synt_hist))
-        running_straw_share = np.sum(hist_straw) / (6 * np.sum(synt_hist))
-        running_rose_share = np.sum(hist_rose) / (np.sum(synt_hist))
-        
-        choc_mid = get_mid_price_from_order_book(state.order_depths, "CHOCOLATE")
-        straw_mid = get_mid_price_from_order_book(state.order_depths, "STRAWBERRIES")
-        rose_mid = get_mid_price_from_order_book(state.order_depths, "ROSES")
-        basket_mid = get_mid_price_from_order_book(state.order_depths, "GIFT_BASKET")
-        expected_rose_mid = (basket_mid - avg_diff) * running_rose_share
-        expected_choc_mid = (basket_mid - avg_diff) * running_choc_share
-        expected_straw_mid = (basket_mid - avg_diff) * running_straw_share
-        expected_basket_mid = 4 * choc_mid + 6 * straw_mid + rose_mid + avg_diff
         match product:
             case "STARFRUIT":
                 price_history = np.array([1.0] + list(reversed(price_history)))
                 predicted_price = np.dot(star_fruit_coefs, price_history)
                 return predicted_price
-            case "CHOCOLATE":
-                return expected_choc_mid
-            case "STRAWBERRIES":
-                return expected_straw_mid
-            case "ROSES":
-                return expected_rose_mid
-            case "GIFT_BASKET":
-                return expected_basket_mid
             case _:
                 return sum(price_history) / len(price_history)
         
@@ -796,6 +702,87 @@ def split_number(n):
     third += n - (first + second + third)
     return first, second, third
 
+def norm_cdf(x):
+    return 0.5 * (1 + math.erf(x / np.sqrt(2)))
+
+def black_scholes(S, K, T, r, sigma, option_type='call'):
+    """
+    Calculate European option price using the Black-Scholes formula,
+    without using scipy.stats.norm.cdf, using numpy for computation instead.
+
+    Parameters:
+        S (float): Current price of the underlying asset.
+        K (float): Strike price of the option.
+        T (float): Time to expiration in years.
+        r (float): Risk-free interest rate (annual).
+        sigma (float): Volatility of the underlying asset (annual).
+        option_type (str): Type of option ('call' or 'put').
+
+    Returns:
+        float: Price of the option.
+    """
+    d1 = (np.log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
+    d2 = d1 - sigma * np.sqrt(T)
+
+    if option_type == 'call':
+        price = S * norm_cdf(d1) - K * np.exp(-r * T) * norm_cdf(d2)
+    else:
+        price = K * np.exp(-r * T) * norm_cdf(-d2) - S * norm_cdf(-d1)
+    return price
+
+def bisection_method(f, a, b, tol=1e-7, max_iter=2000):
+    """
+    Find the root of a function using the Bisection method.
+
+    Parameters:
+        f (function): The function for which to find the root.
+        a (float): Start of the interval.
+        b (float): End of the interval.
+        tol (float): Tolerance for stopping criterion.
+        max_iter (int): Maximum number of iterations.
+
+    Returns:
+        float: Approximate root of the function.
+    """
+    if f(a) * f(b) >= 0:
+        raise ValueError("f(a) and f(b) must have opposite signs")
+
+    for n in range(max_iter):
+        c = (a + b) / 2
+        fc = f(c)
+        
+        if abs(fc) < tol:
+            print(f"Found solution after {n} iterations.")
+            return c
+        elif f(a) * fc < 0:
+            b = c
+        else:
+            a = c
+
+    raise RuntimeError("Exceeded maximum iterations. No solution found.")
+
+
+def get_implied_coconut_price(option_price, K, T, r, sigma, option_type='call'):
+    """
+    Calculate the implied price of a coconut (underlying) using the Black-Scholes formula and the current option price.
+    We assume fixed implied volatility and solve for the coconut price.
+
+    Parameters:
+        option_price (float): Price of the option.
+        K (float): Strike price of the option.
+        T (float): Time to expiration in years.
+        r (float): Risk-free interest rate (annual).
+        sigma (float): Volatility of the underlying asset (annual).
+        option_type (str): Type of option ('call' or 'put').
+
+    Returns:
+        float: Implied price of a coconut.
+    """
+    def f(S):
+        return black_scholes(S, K, T, r, sigma, option_type) - option_price
+
+    interval = (9500, 10500)
+    return bisection_method(f, *interval)
 def print_input_state(self, state: TradingState):
         print("\nINPUT TRADING STATE")
         print("===================\n")
