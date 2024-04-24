@@ -1,13 +1,117 @@
 import json
 import math
 import string
-from typing import List
-
+from typing import Any
 import numpy as np
+from datamodel import Order, OrderDepth, TradingState, UserId, Symbol, Listing, Trade, Observation, ProsperityEncoder
 
-from datamodel import Order, OrderDepth, TradingState, UserId
+
+class Logger:
+    def __init__(self) -> None:
+        self.logs = ""
+        self.max_log_length = 3750
+
+    def print(self, *objects: Any, sep: str = " ", end: str = "\n") -> None:
+        self.logs += sep.join(map(str, objects)) + end
+
+    def flush(self, state: TradingState, orders: dict[Symbol, list[Order]], conversions: int, trader_data: str) -> None:
+        base_length = len(self.to_json([
+            self.compress_state(state, ""),
+            self.compress_orders(orders),
+            conversions,
+            "",
+            "",
+        ]))
+
+        # We truncate state.traderData, trader_data, and self.logs to the same max. length to fit the log limit
+        max_item_length = (self.max_log_length - base_length) // 3
+
+        print(self.to_json([
+            self.compress_state(state, self.truncate(state.traderData, max_item_length)),
+            self.compress_orders(orders),
+            conversions,
+            self.truncate(trader_data, max_item_length),
+            self.truncate(self.logs, max_item_length),
+        ]))
+
+        self.logs = ""
+
+    def compress_state(self, state: TradingState, trader_data: str) -> list[Any]:
+        return [
+            state.timestamp,
+            trader_data,
+            self.compress_listings(state.listings),
+            self.compress_order_depths(state.order_depths),
+            self.compress_trades(state.own_trades),
+            self.compress_trades(state.market_trades),
+            state.position,
+            self.compress_observations(state.observations),
+        ]
+
+    def compress_listings(self, listings: dict[Symbol, Listing]) -> list[list[Any]]:
+        compressed = []
+        for listing in listings.values():
+            compressed.append([listing["symbol"], listing["product"], listing["denomination"]])
+
+        return compressed
+
+    def compress_order_depths(self, order_depths: dict[Symbol, OrderDepth]) -> dict[Symbol, list[Any]]:
+        compressed = {}
+        for symbol, order_depth in order_depths.items():
+            compressed[symbol] = [order_depth.buy_orders, order_depth.sell_orders]
+
+        return compressed
+
+    def compress_trades(self, trades: dict[Symbol, list[Trade]]) -> list[list[Any]]:
+        compressed = []
+        for arr in trades.values():
+            for trade in arr:
+                compressed.append([
+                    trade.symbol,
+                    trade.price,
+                    trade.quantity,
+                    trade.buyer,
+                    trade.seller,
+                    trade.timestamp,
+                ])
+
+        return compressed
+
+    def compress_observations(self, observations: Observation) -> list[Any]:
+        conversion_observations = {}
+        for product, observation in observations.conversionObservations.items():
+            conversion_observations[product] = [
+                observation.bidPrice,
+                observation.askPrice,
+                observation.transportFees,
+                observation.exportTariff,
+                observation.importTariff,
+                observation.sunlight,
+                observation.humidity,
+            ]
+
+        return [observations.plainValueObservations, conversion_observations]
+
+    def compress_orders(self, orders: dict[Symbol, list[Order]]) -> list[list[Any]]:
+        compressed = []
+        for arr in orders.values():
+            for order in arr:
+                compressed.append([order.symbol, order.price, order.quantity])
+
+        return compressed
+
+    def to_json(self, value: Any) -> str:
+        return json.dumps(value, cls=ProsperityEncoder, separators=(",", ":"))
+
+    def truncate(self, value: str, max_length: int) -> str:
+        if len(value) <= max_length:
+            return value
+
+        return value[:max_length - 3] + "..."
+logger = Logger()
 
 
+### Logger above added for visualizer compatibility
 class Trader:
 
     def __init__(self):
@@ -29,6 +133,8 @@ class Trader:
     
     
     def run(self, state: TradingState):
+        #TODO: fix orchid trades quantities
+        #TODO: build and test raw imitation strats for all traders
         result = {}
         traderData = {}
         buy_thresholds = {}
@@ -65,16 +171,16 @@ class Trader:
         result = self.adjust_to_exploit_limits(result, state, buy_thresholds, sell_thresholds)
         orders, conversions = self.get_orchid_trades(state)
         result["ORCHIDS"] = orders
-        basket_orders, choc_orders, straw_orders, rose_orders = self.get_basket_trades(state)
+        basket_orders, choc_orders, straw_orders, rose_orders = self.get_basket_trades(state, traderData)
         result["GIFT_BASKET"] = basket_orders
         result["CHOCOLATE"] = choc_orders
         result["STRAWBERRIES"] = straw_orders
         result["ROSES"] = rose_orders
-        #TODO: add coconut and coconut coupon trades
         res_temp = self.get_coconut_trades(state)
         result["COCONUT"] = res_temp["COCONUT"]
         result["COCONUT_COUPON"] = res_temp["COCONUT_COUPON"]
         traderData = json.dumps(traderData)
+        logger.flush(state, result, conversions, traderData)
         return result, conversions, traderData
 
         
@@ -82,8 +188,8 @@ class Trader:
     
     def get_coconut_trades(self, state):
         thresholds = {
-            "COCONUT": 25,
-            "COCONUT_COUPON": 15
+            "COCONUT": 45,
+            "COCONUT_COUPON": 7
         }
         option_price = get_mid_price_from_order_book(state.order_depths, "COCONUT_COUPON")
         implied_coconut_price = get_implied_coconut_price(option_price, 10000, 250/365, 0, 0.19226514699995814)
@@ -103,11 +209,6 @@ class Trader:
             "COCONUT": coconut_position,
             "COCONUT_COUPON": coconut_coupon_position
         }
-        print(f'Calced prices: {prices}')
-        print(f'Current order book: {state.order_depths["COCONUT"].buy_orders}')
-        print(f'{state.order_depths["COCONUT"].sell_orders}')
-        print(f'{state.order_depths["COCONUT_COUPON"].buy_orders}')
-        print(f'{state.order_depths["COCONUT_COUPON"].sell_orders}')
         result = {}
         for product in ['COCONUT', 'COCONUT_COUPON']:
             orders = []
@@ -161,14 +262,13 @@ class Trader:
                 for i, level in enumerate(levels):
                     orders.append(Order(product, math.ceil(prices[product] + thresholds[product] + 1 + i), -level))
             result[product] = orders
-        print(f'Generated orders: {result}')
         return result
                 
-                
-    
-    def get_basket_trades(self, state):
+                 
+    def get_basket_trades(self, state, traderData):
+        #TODO: add Rhianna strategy for ROSES!
         avg_diff = 379.4904833333333
-        LIMIT =  55 #adapt this to trade more/less aggressively
+        LIMIT =  10 #adapt this to trade more/less aggressively
         choc_mid = get_mid_price_from_order_book(state.order_depths, "CHOCOLATE")
         straw_mid = get_mid_price_from_order_book(state.order_depths, "STRAWBERRIES")
         rose_mid = get_mid_price_from_order_book(state.order_depths, "ROSES")
@@ -185,6 +285,76 @@ class Trader:
         straw_orders_ret = []
         rose_orders_ret = []    
         basket_orders_ret = []
+        
+        #Rhianna copycat strat for roses
+        #check if traderData is empty for Rhianna
+        if state.market_trades.get('ROSES') is None:
+            rhianna_orders_buy = []
+            rhianna_orders_sell = []
+        else:
+            market_trades = state.market_trades["ROSES"]
+            print(f'Found market trades for roses: {market_trades}')
+            rhianna_orders_buy = [order for order in market_trades if order.buyer == "Rhianna"]
+            rhianna_orders_sell = [order for order in market_trades if order.seller == "Rhianna"]
+        #initialize Rhianna to 2 since she starts neutral
+        if state.traderData == '':
+            traderData['Rhianna'] = 2
+        elif json.loads(state.traderData).get('Rhianna') is None:
+            traderData['Rhianna'] = 2
+        else:
+            traderData['Rhianna'] = json.loads(state.traderData)['Rhianna']
+        #check if she moved
+        if len(rhianna_orders_buy) > 0:
+            print(f'Rhianna bought {len(rhianna_orders_buy)} roses')
+            traderData['Rhianna'] = 1
+        if len(rhianna_orders_sell) > 0:
+            traderData['Rhianna'] = 0
+            print(f'Rhianna bought {len(rhianna_orders_sell)} roses')    
+        if traderData['Rhianna'] == 1:
+            # if she is at 0 we buy what we can
+            print('happened')
+            buy_capacity_roses = self.limits["ROSES"] - rose_curr_pos
+            print(f'buy_capacity_roses: {buy_capacity_roses}, rose_curr_pos: {rose_curr_pos}')
+            rose_orders_filled = 0
+            init_best_price, _ = self.get_best_ask("ROSES", state, rose_orders_filled)
+            while True:
+                next_best_ask_price, next_best_ask_quantity = self.get_best_ask("ROSES", state, rose_orders_filled)
+                if next_best_ask_price is None:
+                    break
+                else:
+                    if buy_capacity_roses > 0:
+                        if next_best_ask_price < init_best_price + 20: #dont wanna get screwed by weirdly high asks
+                            quantity_bought = min(-next_best_ask_quantity, buy_capacity_roses)
+                            rose_orders_ret.append(Order("ROSES", next_best_ask_price, quantity_bought))
+                            buy_capacity_roses -= quantity_bought
+                            if quantity_bought == -next_best_ask_quantity:
+                                rose_orders_filled += 1
+                        else:
+                            break
+                    else:
+                        break
+        elif traderData['Rhianna'] == 0:
+            # if she is negative we sell what we can
+            print('happened')
+            sell_capacity_roses = -self.limits["ROSES"] - rose_curr_pos
+            rose_orders_filled = 0
+            init_best_price, init_best_quantity = self.get_best_bid("ROSES", state, rose_orders_filled)
+            while True:
+                next_best_bid_price, next_best_bid_quantity = self.get_best_bid("ROSES", state, rose_orders_filled)
+                if next_best_bid_price is None:
+                    break
+                else:
+                    if sell_capacity_roses < 0:
+                        if next_best_bid_price > init_best_price - 20: #dont wanna get screwed by weirdly low bids
+                            quantity_sold = max(-next_best_bid_quantity, sell_capacity_roses)
+                            rose_orders_ret.append(Order("ROSES", next_best_bid_price, quantity_sold))
+                            sell_capacity_roses -= quantity_sold
+                            if quantity_sold == -next_best_bid_quantity:
+                                rose_orders_filled += 1
+                        else:
+                            break
+                    else:
+                        break
         
         if curr_diff < buy_diff:
             buying_gifts = True
@@ -206,8 +376,8 @@ class Trader:
                     possible = False
                 if straw_curr_pos - 6 < -self.limits["STRAWBERRIES"]:
                     possible = False
-                if rose_curr_pos - 1 < -self.limits["ROSES"]:
-                    possible = False
+                # if rose_curr_pos - 1 < -self.limits["ROSES"]:
+                #     possible = False
                 if gift_curr_pos >= 0 and state.timestamp % 1000000 > 950000:
                     possible = False
                 if not possible:
@@ -229,17 +399,17 @@ class Trader:
                         basket_orders_ret.append(Order("GIFT_BASKET", basket_price, 1))
                         choc_orders_ret += choc_orders
                         straw_orders_ret += straw_orders
-                        rose_orders_ret.append(Order("ROSES", best_rose[0], -1))
+                        #rose_orders_ret.append(Order("ROSES", best_rose[0], -1))
                         gift_curr_pos += 1
                         choc_curr_pos -= 4
                         straw_curr_pos -= 6
-                        rose_curr_pos -= 1
+                        # rose_curr_pos -= 1
                         choc_orders_sold += choc_order_sold_temp
                         straw_orders_sold += straw_orders_sold_temp
                         top_remaining_rose_gone += 1
-                        if top_remaining_rose_gone == abs(best_rose[1]):
-                            rose_orders_sold += 1
-                            top_remaining_rose_gone = 0
+                        # if top_remaining_rose_gone == abs(best_rose[1]):
+                        #     rose_orders_sold += 1
+                        #     top_remaining_rose_gone = 0
                         top_remaining_basket_gone += 1
                         if top_remaining_basket_gone == abs(best_basket[1]):
                             basket_orders_bought += 1
@@ -281,9 +451,8 @@ class Trader:
                     possible = False
                 if straw_curr_pos + 6 > self.limits["STRAWBERRIES"]:
                     possible = False
-                if rose_curr_pos + 1 > self.limits["ROSES"]:
-                    possible = False
-                #TODO: add end of day stopper to other side too
+                # if rose_curr_pos + 1 > self.limits["ROSES"]:
+                #     possible = False
                 if gift_curr_pos <= 0 and state.timestamp % 1000000 > 950000:
                     possible = False
                 if not possible:
@@ -306,7 +475,7 @@ class Trader:
                         basket_orders_ret.append(Order("GIFT_BASKET", basket_price, -1))
                         choc_orders_ret += choc_orders
                         straw_orders_ret += straw_orders
-                        rose_orders_ret.append(Order("ROSES", best_rose[0], 1))
+                        #rose_orders_ret.append(Order("ROSES", best_rose[0], 1))
                         gift_curr_pos -= 1
                         choc_curr_pos += 4
                         straw_curr_pos += 6
@@ -325,6 +494,7 @@ class Trader:
                         selling_gifts = False
                 else:
                     selling_gifts = False
+                    
             return basket_orders_ret, choc_orders_ret, straw_orders_ret, rose_orders_ret
         else:
             best_basket = self.get_best_bid("GIFT_BASKET", state, 0)
@@ -758,7 +928,6 @@ def bisection_method(f, a, b, tol=1e-7, max_iter=2000):
         fc = f(c)
         
         if abs(fc) < tol:
-            print(f"Found solution after {n} iterations.")
             return c
         elif f(a) * fc < 0:
             b = c
@@ -766,8 +935,6 @@ def bisection_method(f, a, b, tol=1e-7, max_iter=2000):
             a = c
 
     raise RuntimeError("Exceeded maximum iterations. No solution found.")
-
-
 def get_implied_coconut_price(option_price, K, T, r, sigma, option_type='call'):
     """
     Calculate the implied price of a coconut (underlying) using the Black-Scholes formula and the current option price.
